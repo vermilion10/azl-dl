@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AzlDl.Cli/AzlDl.Cli.csproj" />
+    <Project Path="src/AzlDl.Core/AzlDl.Core.csproj" />
+  </Folder>
+</Solution>
