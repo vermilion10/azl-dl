@@ -30,8 +30,90 @@ public static class Program
         root.Options.Add(cacheOption);
         root.Subcommands.Add(BuildVersionsCommand(regionOption));
         root.Subcommands.Add(BuildHashesCommand(regionOption, cacheOption));
+        root.Subcommands.Add(BuildDownloadCommand(regionOption, cacheOption));
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildDownloadCommand(Option<string> regionOption, Option<string> cacheOption)
+    {
+        var categoryArgument = new Argument<string>("category")
+        {
+            Description = "Asset category to download",
+        };
+
+        var filtersArgument = new Argument<string[]>("filters")
+        {
+            Description = "Case-insensitive substring filters on the bundle path, AND-combined",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory the bundles are mirrored into, keeping their paths",
+            DefaultValueFactory = _ => Path.Combine("output", "AssetBundles"),
+        };
+
+        var limitOption = new Option<int>("--limit")
+        {
+            Description = "Download at most this many files (0 for no limit)",
+        };
+
+        var concurrencyOption = new Option<int>("--concurrency")
+        {
+            Description = "Parallel downloads",
+            DefaultValueFactory = _ => 8,
+        };
+
+        var dryRunOption = new Option<bool>("--dry-run")
+        {
+            Description = "Show what would be downloaded without downloading it",
+        };
+
+        var command = new Command("download", "Download a category's bundles from the CDN, skipping files that are already current.");
+        command.Arguments.Add(categoryArgument);
+        command.Arguments.Add(filtersArgument);
+        command.Options.Add(outputOption);
+        command.Options.Add(limitOption);
+        command.Options.Add(concurrencyOption);
+        command.Options.Add(dryRunOption);
+
+        command.SetAction(async (parse, cancellationToken) =>
+        {
+            var region = RequireRegion(parse, regionOption);
+            if (region is null)
+            {
+                return 1;
+            }
+
+            var cacheDirectory = parse.GetValue(cacheOption)!;
+            var resolved = await ResolveHashListAsync(region, parse.GetValue(categoryArgument)!, cacheDirectory, cancellationToken);
+            if (resolved is null)
+            {
+                return 1;
+            }
+
+            var (version, rows) = resolved.Value;
+            var filters = parse.GetValue(filtersArgument) ?? [];
+            var selected = rows.Where(r => Matches(r.Path, filters)).ToList();
+
+            var downloader = new AssetDownloader(Http.Value, new CdnClient(Http.Value, region, cacheDirectory));
+            var options = new DownloadOptions(
+                parse.GetValue(outputOption)!,
+                parse.GetValue(concurrencyOption),
+                parse.GetValue(dryRunOption),
+                parse.GetValue(limitOption));
+
+            var log = new Progress<string>(Console.WriteLine);
+            var summary = await downloader.DownloadAsync(selected, options, log, cancellationToken);
+
+            Console.Error.WriteLine(
+                $"{version.Category} {version.Version}: {summary.Downloaded} downloaded ({FormatSize(summary.Bytes)}), " +
+                $"{summary.Skipped} already current, {summary.Failed} failed");
+            return summary.Failed > 0 ? 1 : 0;
+        });
+
+        return command;
     }
 
     private static Command BuildHashesCommand(Option<string> regionOption, Option<string> cacheOption)
