@@ -1,5 +1,6 @@
 using System.CommandLine;
 using AzlDl.Core;
+using AzlDl.Core.Config;
 using AzlDl.Core.Download;
 using AzlDl.Core.Gate;
 using AzlDl.Core.Unity;
@@ -33,8 +34,97 @@ public static class Program
         root.Subcommands.Add(BuildHashesCommand(regionOption, cacheOption));
         root.Subcommands.Add(BuildDownloadCommand(regionOption, cacheOption));
         root.Subcommands.Add(BuildInspectCommand());
+        root.Subcommands.Add(BuildConfigCommand());
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildConfigCommand()
+    {
+        var filtersArgument = new Argument<string[]>("filters")
+        {
+            Description = "Case-insensitive substring filters on the sharecfgdata file name, AND-combined",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
+
+        var assetsOption = new Option<string>("--assets")
+        {
+            Description = "Directory holding the downloaded bundles (the download command's --output)",
+            DefaultValueFactory = _ => Path.Combine("output", "AssetBundles"),
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory to write one JSON file per table into",
+            DefaultValueFactory = _ => Path.Combine("output", "config"),
+        };
+
+        var command = new Command("config", "Decode the downloaded sharecfgdata tables into JSON.");
+        command.Arguments.Add(filtersArgument);
+        command.Options.Add(assetsOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parse =>
+        {
+            var source = Path.Combine(parse.GetValue(assetsOption)!, "sharecfgdata");
+            if (!Directory.Exists(source))
+            {
+                Console.Error.WriteLine($"No {source} folder. Run 'download azl sharecfgdata/' first.");
+                return 1;
+            }
+
+            var filters = parse.GetValue(filtersArgument) ?? [];
+            var files = Directory.EnumerateFiles(source)
+                .Where(f => Path.GetExtension(f).Length == 0 && Matches(Path.GetFileName(f), filters))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+            if (files.Count == 0)
+            {
+                Console.Error.WriteLine($"No sharecfgdata files in {source} match.");
+                return 1;
+            }
+
+            var interpreter = new ConfigInterpreter();
+            var failed = 0;
+            foreach (var file in files)
+            {
+                try
+                {
+                    var count = 0;
+                    foreach (var prototype in ConfigChunkReader.ReadAll(File.ReadAllBytes(file)))
+                    {
+                        interpreter.Run(prototype);
+                        count++;
+                    }
+
+                    Console.WriteLine($"{Path.GetFileName(file),-34} {count,7} entries");
+                }
+                catch (InvalidDataException e)
+                {
+                    failed++;
+                    Console.Error.WriteLine($"FAIL {Path.GetFileName(file)}: {e.Message}");
+                }
+            }
+
+            var output = parse.GetValue(outputOption)!;
+            Directory.CreateDirectory(output);
+            foreach (var (name, table) in interpreter.Base.Entries)
+            {
+                var path = Path.Combine(output, $"{name}.json");
+                using var stream = File.Create(path);
+                using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions
+                {
+                    Indented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                });
+                LuaJson.Write(writer, table);
+            }
+
+            Console.Error.WriteLine($"{interpreter.Base.Count} tables written to {output}, {failed} files failed");
+            return failed > 0 ? 1 : 0;
+        });
+
+        return command;
     }
 
     private static Command BuildInspectCommand()
