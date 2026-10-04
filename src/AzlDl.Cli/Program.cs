@@ -3,6 +3,7 @@ using AzlDl.Core;
 using AzlDl.Core.Config;
 using AzlDl.Core.Download;
 using AzlDl.Core.Gate;
+using AzlDl.Core.Scripts;
 using AzlDl.Core.Unity;
 using AzlDl.Core.Versioning;
 
@@ -35,8 +36,72 @@ public static class Program
         root.Subcommands.Add(BuildDownloadCommand(regionOption, cacheOption));
         root.Subcommands.Add(BuildInspectCommand());
         root.Subcommands.Add(BuildConfigCommand());
+        root.Subcommands.Add(BuildScriptsCommand());
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildScriptsCommand()
+    {
+        var bundleOption = new Option<string>("--bundle")
+        {
+            Description = "The downloaded scripts bundle",
+            DefaultValueFactory = _ => Path.Combine("output", "AssetBundles", "scripts64"),
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory to write the Lua bytecode files into, keeping their in-game paths",
+            DefaultValueFactory = _ => Path.Combine("output", "scripts"),
+        };
+
+        var command = new Command("scripts", "Decrypt the scripts bundle and write out every Lua script it holds.");
+        command.Options.Add(bundleOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parse =>
+        {
+            var bundlePath = parse.GetValue(bundleOption)!;
+            if (!File.Exists(bundlePath))
+            {
+                Console.Error.WriteLine($"No file at {bundlePath}. Run 'download azl scripts64' first.");
+                return 1;
+            }
+
+            var data = File.ReadAllBytes(bundlePath);
+            if (ScriptBundleCipher.LooksEncrypted(data))
+            {
+                data = ScriptBundleCipher.Decrypt(data);
+            }
+            else if (!BundleInspector.IsUnityFsBytes(data))
+            {
+                Console.Error.WriteLine($"{bundlePath} is neither a bundle nor an encrypted scripts bundle.");
+                return 1;
+            }
+
+            var output = parse.GetValue(outputOption)!;
+            var count = 0;
+            long bytes = 0;
+            foreach (var script in ScriptBundle.ReadScripts(data))
+            {
+                var target = Path.GetFullPath(Path.Combine(output, script.Path));
+                if (!target.StartsWith(Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.Error.WriteLine($"Skipped {script.Path}: path leaves the output folder");
+                    continue;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllBytes(target, script.Data);
+                count++;
+                bytes += script.Data.Length;
+            }
+
+            Console.Error.WriteLine($"{count} scripts ({FormatSize(bytes)}) written to {output}");
+            return 0;
+        });
+
+        return command;
     }
 
     private static Command BuildConfigCommand()

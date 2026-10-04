@@ -19,6 +19,8 @@ public static class BundleInspector
         return stream.Read(head) == head.Length && head.SequenceEqual(Signature);
     }
 
+    public static bool IsUnityFsBytes(ReadOnlySpan<byte> data) => data.StartsWith(Signature);
+
     public static BundleReport Inspect(string path)
     {
         var manager = new AssetsManager();
