@@ -2,6 +2,7 @@ using System.CommandLine;
 using AzlDl.Core;
 using AzlDl.Core.Download;
 using AzlDl.Core.Gate;
+using AzlDl.Core.Unity;
 using AzlDl.Core.Versioning;
 
 namespace AzlDl.Cli;
@@ -31,8 +32,58 @@ public static class Program
         root.Subcommands.Add(BuildVersionsCommand(regionOption));
         root.Subcommands.Add(BuildHashesCommand(regionOption, cacheOption));
         root.Subcommands.Add(BuildDownloadCommand(regionOption, cacheOption));
+        root.Subcommands.Add(BuildInspectCommand());
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildInspectCommand()
+    {
+        var pathArgument = new Argument<string>("bundle")
+        {
+            Description = "Path to a downloaded bundle file",
+        };
+
+        var command = new Command("inspect", "List the objects inside one downloaded bundle.");
+        command.Arguments.Add(pathArgument);
+
+        command.SetAction(parse =>
+        {
+            var path = parse.GetValue(pathArgument)!;
+            if (!File.Exists(path))
+            {
+                Console.Error.WriteLine($"No file at {path}");
+                return 1;
+            }
+
+            if (!BundleInspector.IsUnityFs(path))
+            {
+                var head = new byte[16];
+                using (var stream = File.OpenRead(path))
+                {
+                    stream.ReadExactly(head, 0, (int)Math.Min(head.Length, stream.Length));
+                }
+
+                Console.Error.WriteLine($"{path} isn't a plain UnityFS bundle. First bytes: {Convert.ToHexString(head)}");
+                return 1;
+            }
+
+            var report = BundleInspector.Inspect(path);
+            Console.WriteLine($"unity  {report.UnityVersion}");
+            foreach (var file in report.Files)
+            {
+                Console.WriteLine($"file   {file}");
+            }
+
+            foreach (var asset in report.Assets)
+            {
+                Console.WriteLine($"{asset.Type,-16} {asset.PathId,22}  {asset.Name}");
+            }
+
+            return 0;
+        });
+
+        return command;
     }
 
     private static Command BuildDownloadCommand(Option<string> regionOption, Option<string> cacheOption)
