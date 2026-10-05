@@ -39,8 +39,82 @@ public static class Program
         root.Subcommands.Add(BuildScriptsCommand());
         root.Subcommands.Add(BuildStoryCommand());
         root.Subcommands.Add(BuildShareCfgCommand());
+        root.Subcommands.Add(BuildExtractCommand());
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildExtractCommand()
+    {
+        var filtersArgument = new Argument<string[]>("filters")
+        {
+            Description = "Case-insensitive substring filters on the bundle path (e.g. painting/ qiye), AND-combined",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
+
+        var assetsOption = new Option<string>("--assets")
+        {
+            Description = "Directory holding the downloaded bundles (the download command's --output)",
+            DefaultValueFactory = _ => Path.Combine("output", "AssetBundles"),
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory to write images and files into",
+            DefaultValueFactory = _ => Path.Combine("output", "art"),
+        };
+
+        var concurrencyOption = new Option<int>("--concurrency")
+        {
+            Description = "Bundles processed in parallel",
+            DefaultValueFactory = _ => Math.Clamp(Environment.ProcessorCount, 1, 8),
+        };
+
+        var command = new Command("extract", "Convert downloaded bundles to PNGs and files; paintings are reassembled from their tiles.");
+        command.Arguments.Add(filtersArgument);
+        command.Options.Add(assetsOption);
+        command.Options.Add(outputOption);
+        command.Options.Add(concurrencyOption);
+
+        command.SetAction(parse =>
+        {
+            var assets = parse.GetValue(assetsOption)!;
+            if (!Directory.Exists(assets))
+            {
+                Console.Error.WriteLine($"No {assets} folder. Download some bundles first.");
+                return 1;
+            }
+
+            var filters = parse.GetValue(filtersArgument) ?? [];
+            var root = Path.GetFullPath(assets);
+            var bundles = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Select(f => Path.GetRelativePath(root, f).Replace('\\', '/'))
+                .Where(p => Path.GetExtension(p).Length == 0 && Matches(p, filters))
+                .Where(p => BundleInspector.IsUnityFs(Path.Combine(root, p)))
+                // A painting's _tex bundle produces the image; the bare one only holds its prefab.
+                .Where(p => !p.StartsWith("painting/", StringComparison.Ordinal) || p.EndsWith("_tex", StringComparison.Ordinal)
+                            || !File.Exists(Path.Combine(root, p + "_tex")))
+                .Order(StringComparer.Ordinal)
+                .ToList();
+            if (bundles.Count == 0)
+            {
+                Console.Error.WriteLine("No downloaded bundles match.");
+                return 1;
+            }
+
+            var extractor = new AzlDl.Core.Art.ArtExtractor(root, parse.GetValue(outputOption)!);
+            var summary = extractor.Extract(bundles, parse.GetValue(concurrencyOption), new Progress<string>(Console.Error.WriteLine));
+            foreach (var error in summary.Errors)
+            {
+                Console.Error.WriteLine($"FAIL {error}");
+            }
+
+            Console.Error.WriteLine(
+                $"{summary.Bundles} bundles: {summary.Paintings} paintings, {summary.Images} images, {summary.Files} files, {summary.Errors.Count} failed");
+            return summary.Errors.Count > 0 ? 1 : 0;
+        });
+
+        return command;
     }
 
     private static Command BuildShareCfgCommand()
@@ -392,8 +466,14 @@ public static class Program
             Description = "Path to a downloaded bundle file",
         };
 
+        var dumpOption = new Option<string?>("--dump")
+        {
+            Description = "Print the full field tree of the asset with this name instead of listing objects",
+        };
+
         var command = new Command("inspect", "List the objects inside one downloaded bundle.");
         command.Arguments.Add(pathArgument);
+        command.Options.Add(dumpOption);
 
         command.SetAction(parse =>
         {
@@ -402,6 +482,17 @@ public static class Program
             {
                 Console.Error.WriteLine($"No file at {path}");
                 return 1;
+            }
+
+            if (parse.GetValue(dumpOption) is { } dumpName && BundleInspector.IsUnityFs(path))
+            {
+                if (BundleInspector.Dump(path, dumpName, Console.Out) == 0)
+                {
+                    Console.Error.WriteLine($"No asset named '{dumpName}' in {path}");
+                    return 1;
+                }
+
+                return 0;
             }
 
             if (!BundleInspector.IsUnityFs(path))

@@ -68,4 +68,42 @@ public static class BundleInspector
             manager.UnloadAll(true);
         }
     }
+
+    // Writes the field tree of every asset whose m_Name matches; returns how many matched.
+    public static int Dump(string path, string assetName, TextWriter output)
+    {
+        var manager = new AssetsManager();
+        try
+        {
+            var bundle = manager.LoadBundleFile(path, unpackIfPacked: true);
+            var matched = 0;
+            for (var index = 0; index < bundle.file.BlockAndDirInfo.DirectoryInfos.Count; index++)
+            {
+                if (!bundle.file.IsAssetsFile(index))
+                {
+                    continue;
+                }
+
+                var instance = manager.LoadAssetsFileFromBundle(bundle, index, loadDeps: false);
+                foreach (var info in instance.file.AssetInfos)
+                {
+                    var field = manager.GetBaseField(instance, info, AssetReadFlags.None);
+                    if (field is null || field["m_Name"].IsDummy || field["m_Name"].AsString != assetName)
+                    {
+                        continue;
+                    }
+
+                    output.WriteLine($"# {(AssetClassID)info.TypeId} {info.PathId}");
+                    FieldDump.Write(output, field);
+                    matched++;
+                }
+            }
+
+            return matched;
+        }
+        finally
+        {
+            manager.UnloadAll(true);
+        }
+    }
 }
