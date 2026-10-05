@@ -2,11 +2,13 @@ using System.Text;
 
 namespace AzlDl.Core.Config;
 
-// One decoded prototype: instructions with operands already de-obfuscated, plus its constants.
+// One decoded prototype: instructions with operands already de-obfuscated, its constants (GC constants include
+// nested function prototypes), and its upvalue descriptors.
 public sealed record ConfigPrototype(
     IReadOnlyList<Instruction> Instructions,
     IReadOnlyList<object> NumericConstants,
-    IReadOnlyList<object> GcConstants);
+    IReadOnlyList<object> GcConstants,
+    IReadOnlyList<ushort> Upvalues);
 
 // A, B and C are 8-bit; D is the 16-bit C|B<<8 used by instructions that take one wide operand.
 public readonly record struct Instruction(Opcode Op, int A, int B, int C)
@@ -17,16 +19,24 @@ public readonly record struct Instruction(Opcode Op, int A, int B, int C)
 // LuaJIT 2.1 opcodes that occur in the data scripts. The game remaps opcode numbers; these are its values.
 public enum Opcode : byte
 {
+    Ist = 0x02,
     Kstr = 0x06,
     Kshort = 0x08,
     Knum = 0x09,
+    Kpri = 0x0A,
+    Jmp = 0x17,
     Call = 0x25,
     Unm = 0x2E,
     Ret0 = 0x32,
     Ret1 = 0x33,
+    Uget = 0x45,
+    Uclo = 0x4A,
+    Fnew = 0x4B,
     Tnew = 0x4C,
     Tdup = 0x4D,
     Gget = 0x4E,
+    Gset = 0x4F,
+    Tgetv = 0x50,
     Tgets = 0x51,
     Tsetv = 0x55,
     Tsets = 0x56,
@@ -38,6 +48,7 @@ public enum Opcode : byte
 // one a single "pg.base.<table>[key] = {...}" statement; scripts from the scripts bundle start with a normal LuaJIT
 // header. Differences from stock LuaJIT dumps:
 // - opcode bytes are remapped (see Opcode);
+// - the four prototype header bytes are scrambled; XORed together they give the upvalue count;
 // - operand A is stored XOR 0xFF, and the B/high-D byte is stored XOR the instruction's index;
 // - the prototype header lists the numeric constant count before the GC constant count,
 //   and numeric constants are written before GC constants;
@@ -45,6 +56,7 @@ public enum Opcode : byte
 // - string bytes are XORed with 0xFF minus their position.
 public static class ConfigChunkReader
 {
+    private const int KgcChild = 0;
     private const int KgcTable = 1;
     private const int KgcString = 5;
 
@@ -57,15 +69,18 @@ public static class ConfigChunkReader
 
     private const int FlagStripped = 0x02;
 
-    public static IEnumerable<ConfigPrototype> ReadAll(byte[] data)
+    // Returns the top-level prototypes in file order: every sharecfgdata statement, or a script's main chunk.
+    // Nested functions are written before their parent and are attached to it as GC constants instead.
+    public static IReadOnlyList<ConfigPrototype> ReadAll(byte[] data)
     {
+        var stack = new List<ConfigPrototype>();
         var position = SkipFileHeader(data);
         while (position < data.Length)
         {
             var size = (int)ReadUleb(data, ref position);
             if (size == 0)
             {
-                yield break;
+                break;
             }
 
             if (position + size > data.Length)
@@ -73,9 +88,11 @@ public static class ConfigChunkReader
                 throw new InvalidDataException($"Prototype at {position} runs past the end of the file.");
             }
 
-            yield return ReadPrototype(data.AsSpan(position, size).ToArray());
+            stack.Add(ReadPrototype(data.AsSpan(position, size).ToArray(), stack));
             position += size;
         }
+
+        return stack;
     }
 
     // "\x1bLJ", a version byte, ULEB flags, then the chunk name unless the dump is stripped.
@@ -96,28 +113,32 @@ public static class ConfigChunkReader
         return position;
     }
 
-    private static ConfigPrototype ReadPrototype(byte[] data)
+    private static ConfigPrototype ReadPrototype(byte[] data, List<ConfigPrototype> stack)
     {
-        // Flags, frame size, parameter count and upvalue count; none are needed to run a data statement.
+        // Four header bytes (flags, parameter count, frame size and upvalue count, scrambled). The only field needed
+        // to parse the rest is the upvalue count, which is the XOR of all four.
+        var upvalueCount = data[0] ^ data[1] ^ data[2] ^ data[3];
         var position = 4;
         var numericCount = (int)ReadUleb(data, ref position);
         var gcCount = (int)ReadUleb(data, ref position);
         var instructionCount = (int)ReadUleb(data, ref position);
 
+        // Opcodes outside the Opcode enum are kept; the interpreter rejects them only if they are executed.
         var instructions = new Instruction[instructionCount];
         for (var i = 0; i < instructionCount; i++)
         {
             var at = position + i * 4;
-            var op = (Opcode)data[at];
-            if (!Enum.IsDefined(op))
-            {
-                throw new InvalidDataException($"Unknown opcode 0x{data[at]:X2} at instruction {i}.");
-            }
-
-            instructions[i] = new Instruction(op, data[at + 1] ^ 0xFF, data[at + 3] ^ (i & 0xFF), data[at + 2]);
+            instructions[i] = new Instruction((Opcode)data[at], data[at + 1] ^ 0xFF, data[at + 3] ^ (i & 0xFF), data[at + 2]);
         }
 
         position += instructionCount * 4;
+
+        var upvalues = new ushort[upvalueCount];
+        for (var i = 0; i < upvalueCount; i++)
+        {
+            upvalues[i] = (ushort)(data[position] | data[position + 1] << 8);
+            position += 2;
+        }
 
         var numbers = new object[numericCount];
         for (var i = 0; i < numericCount; i++)
@@ -129,7 +150,7 @@ public static class ConfigChunkReader
         var gc = new object[gcCount];
         for (var i = gcCount - 1; i >= 0; i--)
         {
-            gc[i] = ReadGcConstant(data, ref position);
+            gc[i] = ReadGcConstant(data, ref position, stack);
         }
 
         if (position != data.Length)
@@ -137,10 +158,10 @@ public static class ConfigChunkReader
             throw new InvalidDataException($"Prototype has {data.Length - position} unread bytes.");
         }
 
-        return new ConfigPrototype(instructions, numbers, gc);
+        return new ConfigPrototype(instructions, numbers, gc, upvalues);
     }
 
-    private static object ReadGcConstant(byte[] data, ref int position)
+    private static object ReadGcConstant(byte[] data, ref int position, List<ConfigPrototype> stack)
     {
         var type = (int)ReadUleb(data, ref position);
         if (type >= KgcString)
@@ -148,9 +169,21 @@ public static class ConfigChunkReader
             return ReadString(data, ref position, type - KgcString);
         }
 
+        if (type == KgcChild)
+        {
+            if (stack.Count == 0)
+            {
+                throw new InvalidDataException("Function constant with no prototype before it.");
+            }
+
+            var child = stack[^1];
+            stack.RemoveAt(stack.Count - 1);
+            return child;
+        }
+
         if (type != KgcTable)
         {
-            throw new InvalidDataException($"Unsupported constant type {type}; data files only hold strings and tables.");
+            throw new InvalidDataException($"Unsupported constant type {type}; data files hold strings, tables and functions.");
         }
 
         var hashCount = (int)ReadUleb(data, ref position);

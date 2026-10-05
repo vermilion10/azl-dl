@@ -38,8 +38,117 @@ public static class Program
         root.Subcommands.Add(BuildConfigCommand());
         root.Subcommands.Add(BuildScriptsCommand());
         root.Subcommands.Add(BuildStoryCommand());
+        root.Subcommands.Add(BuildShareCfgCommand());
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildShareCfgCommand()
+    {
+        var filtersArgument = new Argument<string[]>("filters")
+        {
+            Description = "Case-insensitive substring filters on the sharecfg file name, AND-combined",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
+
+        var sourceOption = new Option<string>("--source")
+        {
+            Description = "Folder of sharecfg scripts (written by the scripts command)",
+            DefaultValueFactory = _ => Path.Combine("output", "scripts", "assets", "luabuilds", "android", "arm64", "sharecfg"),
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory to write one JSON file per table into",
+            DefaultValueFactory = _ => Path.Combine("output", "sharecfg"),
+        };
+
+        var command = new Command("sharecfg", "Run the sharecfg scripts and write the tables they build as JSON.");
+        command.Arguments.Add(filtersArgument);
+        command.Options.Add(sourceOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parse =>
+        {
+            var source = parse.GetValue(sourceOption)!;
+            if (!Directory.Exists(source))
+            {
+                Console.Error.WriteLine($"No {source} folder. Run the scripts command first.");
+                return 1;
+            }
+
+            var filters = parse.GetValue(filtersArgument) ?? [];
+            var interpreter = new ConfigInterpreter();
+            var failures = new List<string>();
+            var ran = 0;
+            foreach (var file in Directory.EnumerateFiles(source, "*.lua.bytes", SearchOption.AllDirectories)
+                         .Order(StringComparer.Ordinal))
+            {
+                var name = Path.GetFileName(file)[..^".lua.bytes".Length];
+                if (!Matches(name, filters))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    foreach (var prototype in ConfigChunkReader.ReadAll(File.ReadAllBytes(file)))
+                    {
+                        interpreter.Run(prototype);
+                    }
+
+                    ran++;
+                }
+                catch (Exception e) when (e is InvalidDataException or InvalidCastException or IndexOutOfRangeException)
+                {
+                    failures.Add($"{name}: {e.Message}");
+                }
+            }
+
+            // The game keeps a table's rows in pg.base.<name> and its lookup lists (all, indexes) in pg.<name>.
+            var output = parse.GetValue(outputOption)!;
+            Directory.CreateDirectory(output);
+            var written = 0;
+            var names = interpreter.Pg.Entries.Keys.OfType<string>()
+                .Concat(interpreter.Base.Entries.Keys.OfType<string>())
+                .Where(n => n != "base")
+                .Distinct();
+            foreach (var name in names)
+            {
+                var merged = new LuaTable();
+                foreach (var part in new[] { interpreter.Base[name], interpreter.Pg[name] })
+                {
+                    if (part is not LuaTable table)
+                    {
+                        continue;
+                    }
+
+                    foreach (var (key, value) in table.Entries)
+                    {
+                        if (!Equals(key, "__name"))
+                        {
+                            merged[key] = value;
+                        }
+                    }
+                }
+
+                if (merged.Count > 0)
+                {
+                    WriteJsonFile(Path.Combine(output, $"{name}.json"), merged);
+                    written++;
+                }
+            }
+
+            foreach (var failure in failures)
+            {
+                Console.Error.WriteLine($"FAIL {failure}");
+            }
+
+            Console.Error.WriteLine($"{ran} scripts ran, {failures.Count} failed, {written} tables written to {output}");
+            return failures.Count > 0 ? 1 : 0;
+        });
+
+        return command;
     }
 
     private static Command BuildStoryCommand()

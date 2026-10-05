@@ -76,6 +76,10 @@ public static class LuaJson
                 writer.WriteEndArray();
                 writer.WriteEndObject();
                 break;
+            case LuaClosure or LuaBuiltin:
+                // Lookup helpers the game attaches to some tables; there is no data in them to write.
+                writer.WriteNullValue();
+                break;
             default:
                 throw new InvalidOperationException($"Can't write {value.GetType().Name} as JSON.");
         }
