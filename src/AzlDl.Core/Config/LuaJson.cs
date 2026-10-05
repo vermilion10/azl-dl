@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace AzlDl.Core.Config;
 
 // Writes Lua tables as JSON: sequences (keys 1..n, including empty tables) become arrays, everything else an
-// object with string keys.
+// object with string keys. Calls and undefined globals become {"call": ..., "args": [...]} and {"global": ...}.
 // Entries keep the order the game assigned them in.
 public static class LuaJson
 {
@@ -48,6 +48,32 @@ public static class LuaJson
                     Write(writer, item);
                 }
 
+                writer.WriteEndObject();
+                break;
+            case LuaGlobalRef global:
+                writer.WriteStartObject();
+                writer.WriteString("global", global.Name);
+                writer.WriteEndObject();
+                break;
+            case LuaCall call:
+                writer.WriteStartObject();
+                writer.WritePropertyName("call");
+                if (call.Function is LuaGlobalRef function)
+                {
+                    writer.WriteStringValue(function.Name);
+                }
+                else
+                {
+                    Write(writer, call.Function);
+                }
+
+                writer.WriteStartArray("args");
+                foreach (var argument in call.Arguments)
+                {
+                    Write(writer, argument);
+                }
+
+                writer.WriteEndArray();
                 writer.WriteEndObject();
                 break;
             default:

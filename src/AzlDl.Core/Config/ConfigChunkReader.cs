@@ -14,14 +14,16 @@ public readonly record struct Instruction(Opcode Op, int A, int B, int C)
     public int D => C | B << 8;
 }
 
-// LuaJIT 2.1 opcodes that occur in the sharecfgdata files. The game remaps opcode numbers; these are its values.
+// LuaJIT 2.1 opcodes that occur in the data scripts. The game remaps opcode numbers; these are its values.
 public enum Opcode : byte
 {
     Kstr = 0x06,
     Kshort = 0x08,
     Knum = 0x09,
+    Call = 0x25,
     Unm = 0x2E,
     Ret0 = 0x32,
+    Ret1 = 0x33,
     Tnew = 0x4C,
     Tdup = 0x4D,
     Gget = 0x4E,
@@ -29,10 +31,12 @@ public enum Opcode : byte
     Tsetv = 0x55,
     Tsets = 0x56,
     Tsetb = 0x57,
+    Tsetm = 0x58,
 }
 
-// Reads sharecfgdata files: LuaJIT 2.1 bytecode prototypes laid end to end with no file header, each one a single
-// "pg.base.<table>[key] = {...}" statement. Differences from stock LuaJIT dumps:
+// Reads the game's LuaJIT 2.1 bytecode. sharecfgdata files are prototypes laid end to end with no file header, each
+// one a single "pg.base.<table>[key] = {...}" statement; scripts from the scripts bundle start with a normal LuaJIT
+// header. Differences from stock LuaJIT dumps:
 // - opcode bytes are remapped (see Opcode);
 // - operand A is stored XOR 0xFF, and the B/high-D byte is stored XOR the instruction's index;
 // - the prototype header lists the numeric constant count before the GC constant count,
@@ -51,9 +55,11 @@ public static class ConfigChunkReader
     private const int KtabNum = 4;
     private const int KtabString = 5;
 
+    private const int FlagStripped = 0x02;
+
     public static IEnumerable<ConfigPrototype> ReadAll(byte[] data)
     {
-        var position = 0;
+        var position = SkipFileHeader(data);
         while (position < data.Length)
         {
             var size = (int)ReadUleb(data, ref position);
@@ -70,6 +76,24 @@ public static class ConfigChunkReader
             yield return ReadPrototype(data.AsSpan(position, size).ToArray());
             position += size;
         }
+    }
+
+    // "\x1bLJ", a version byte, ULEB flags, then the chunk name unless the dump is stripped.
+    private static int SkipFileHeader(byte[] data)
+    {
+        if (data.Length < 5 || data[0] != 0x1B || data[1] != (byte)'L' || data[2] != (byte)'J')
+        {
+            return 0;
+        }
+
+        var position = 4;
+        var flags = ReadUleb(data, ref position);
+        if ((flags & FlagStripped) == 0)
+        {
+            position += (int)ReadUleb(data, ref position);
+        }
+
+        return position;
     }
 
     private static ConfigPrototype ReadPrototype(byte[] data)

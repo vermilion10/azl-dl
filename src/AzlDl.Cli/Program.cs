@@ -37,8 +37,99 @@ public static class Program
         root.Subcommands.Add(BuildInspectCommand());
         root.Subcommands.Add(BuildConfigCommand());
         root.Subcommands.Add(BuildScriptsCommand());
+        root.Subcommands.Add(BuildStoryCommand());
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildStoryCommand()
+    {
+        var filtersArgument = new Argument<string[]>("filters")
+        {
+            Description = "Case-insensitive substring filters on the story file name, AND-combined",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
+
+        var sourceOption = new Option<string>("--source")
+        {
+            Description = "Folder of story scripts (written by the scripts command)",
+            DefaultValueFactory = _ => Path.Combine("output", "scripts", "assets", "luabuilds", "android", "arm64", "gamecfg", "story"),
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory to write one JSON file per story into",
+            DefaultValueFactory = _ => Path.Combine("output", "story"),
+        };
+
+        var command = new Command("story", "Decode the story scripts into JSON.");
+        command.Arguments.Add(filtersArgument);
+        command.Options.Add(sourceOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parse =>
+        {
+            var source = parse.GetValue(sourceOption)!;
+            if (!Directory.Exists(source))
+            {
+                Console.Error.WriteLine($"No {source} folder. Run the scripts command first.");
+                return 1;
+            }
+
+            var filters = parse.GetValue(filtersArgument) ?? [];
+            var output = parse.GetValue(outputOption)!;
+            Directory.CreateDirectory(output);
+
+            var written = 0;
+            var failed = 0;
+            foreach (var file in Directory.EnumerateFiles(source, "*.lua.bytes").Order(StringComparer.Ordinal))
+            {
+                var name = Path.GetFileName(file)[..^".lua.bytes".Length];
+                if (!Matches(name, filters))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var interpreter = new ConfigInterpreter();
+                    object? story = null;
+                    foreach (var prototype in ConfigChunkReader.ReadAll(File.ReadAllBytes(file)))
+                    {
+                        story = interpreter.Run(prototype);
+                    }
+
+                    if (story is null)
+                    {
+                        throw new InvalidDataException("The script doesn't return a table.");
+                    }
+
+                    WriteJsonFile(Path.Combine(output, $"{name}.json"), story);
+                    written++;
+                }
+                catch (Exception e) when (e is InvalidDataException or InvalidCastException or IndexOutOfRangeException)
+                {
+                    failed++;
+                    Console.Error.WriteLine($"FAIL {name}: {e.Message}");
+                }
+            }
+
+            Console.Error.WriteLine($"{written} stories written to {output}, {failed} failed");
+            return failed > 0 ? 1 : 0;
+        });
+
+        return command;
+    }
+
+    private static void WriteJsonFile(string path, object? value)
+    {
+        using var stream = File.Create(path);
+        using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions
+        {
+            Indented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+        LuaJson.Write(writer, value);
     }
 
     private static Command BuildScriptsCommand()
@@ -175,14 +266,7 @@ public static class Program
             Directory.CreateDirectory(output);
             foreach (var (name, table) in interpreter.Base.Entries)
             {
-                var path = Path.Combine(output, $"{name}.json");
-                using var stream = File.Create(path);
-                using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions
-                {
-                    Indented = true,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                });
-                LuaJson.Write(writer, table);
+                WriteJsonFile(Path.Combine(output, $"{name}.json"), table);
             }
 
             Console.Error.WriteLine($"{interpreter.Base.Count} tables written to {output}, {failed} files failed");
