@@ -7,7 +7,7 @@ namespace AzlDl.Core.Art;
 public sealed record ExtractSummary(int Bundles, int Images, int Paintings, int Files, IReadOnlyList<string> Errors);
 
 // Converts downloaded bundles into plain files under OutputDirectory:
-// - painting/<name>_tex bundles become one reconstructed painting, art/painting/<name>.png;
+// - painting/<name>_tex bundles become art/painting/<name>.png, reassembled from tiles when the painting has a mesh;
 // - every other Texture2D becomes <bundle path>/<texture name>.png;
 // - TextAssets (Spine .skel and .atlas files, for example) are written as-is under <bundle path>/.
 public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
@@ -62,10 +62,12 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
                     continue;
                 }
 
-                var mesh = isPainting ? FindMesh(manager, instance, bundlePath, name + MeshSuffix) : null;
-                if (mesh is not null)
+                if (isPainting)
                 {
-                    PaintingReconstructor.Rebuild(image, mesh).WritePng(Target("painting", name + ".png"));
+                    // Newer paintings aren't tiled: there is no mesh and the texture is already the whole image.
+                    var mesh = FindMesh(manager, instance, bundlePath, name + MeshSuffix);
+                    var painting = mesh is null ? image : PaintingReconstructor.Rebuild(image, mesh);
+                    painting.WritePng(Target("painting", name + ".png"));
                     paintings++;
                 }
                 else

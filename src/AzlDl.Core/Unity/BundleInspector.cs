@@ -69,7 +69,7 @@ public static class BundleInspector
         }
     }
 
-    // Writes the field tree of every asset whose m_Name matches; returns how many matched.
+    // Writes the field tree of every asset whose m_Name or path ID matches; returns how many matched.
     public static int Dump(string path, string assetName, TextWriter output)
     {
         var manager = new AssetsManager();
@@ -87,8 +87,9 @@ public static class BundleInspector
                 var instance = manager.LoadAssetsFileFromBundle(bundle, index, loadDeps: false);
                 foreach (var info in instance.file.AssetInfos)
                 {
+                    var byId = info.PathId.ToString(System.Globalization.CultureInfo.InvariantCulture) == assetName;
                     var field = manager.GetBaseField(instance, info, AssetReadFlags.None);
-                    if (field is null || field["m_Name"].IsDummy || field["m_Name"].AsString != assetName)
+                    if (field is null || (!byId && (field["m_Name"].IsDummy || field["m_Name"].AsString != assetName)))
                     {
                         continue;
                     }
