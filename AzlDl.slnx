@@ -1,6 +1,10 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/AzlDl.App/AzlDl.App.csproj" />
     <Project Path="src/AzlDl.Cli/AzlDl.Cli.csproj" />
     <Project Path="src/AzlDl.Core/AzlDl.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AzlDl.App.Tests/AzlDl.App.Tests.csproj" />
   </Folder>
 </Solution>

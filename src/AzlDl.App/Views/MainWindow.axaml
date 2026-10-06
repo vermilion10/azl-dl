@@ -1,0 +1,37 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AzlDl.App.ViewModels"
+        xmlns:views="using:AzlDl.App.Views"
+        x:Class="AzlDl.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="azl-dl"
+        Width="1360" Height="880" MinWidth="900" MinHeight="600">
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:ShipsViewModel">
+      <views:ShipsView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:SettingsViewModel">
+      <views:SettingsView />
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}"
+            BorderThickness="0,0,0,1" Padding="22,6">
+      <DockPanel>
+        <TextBlock Text="azl-dl" FontFamily="{DynamicResource DisplayFont}" FontSize="22" FontWeight="Bold"
+                   VerticalAlignment="Center" Margin="0,0,28,0" />
+        <TextBlock DockPanel.Dock="Right" Classes="data muted" Text="EN client data" VerticalAlignment="Center" />
+        <ListBox Classes="nav" ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection}"
+                 AutomationProperties.Name="Sections">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:Section">
+              <TextBlock Text="{Binding Title}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+    <ContentControl Content="{Binding SelectedSection.Page}" />
+  </DockPanel>
+</Window>

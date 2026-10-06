@@ -1,0 +1,62 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:data="using:AzlDl.Core.Data"
+                    xmlns:controls="using:AzlDl.App.Controls">
+  <!-- Port menu: the game's own UI language. Clipped corners, stat tiles, Super Rare gold as the accent. -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="BgBrush" Color="#E8EDF4" />
+      <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="InkBrush" Color="#0F1B2D" />
+      <SolidColorBrush x:Key="MutedBrush" Color="#4A596E" />
+      <SolidColorBrush x:Key="LineBrush" Color="#C9D3E1" />
+      <SolidColorBrush x:Key="AccentBrush" Color="#7A5A0C" />
+      <SolidColorBrush x:Key="AccentInkBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="StageBrush" Color="#DCE4EF" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="BgBrush" Color="#0B1220" />
+      <SolidColorBrush x:Key="SurfaceBrush" Color="#121C2E" />
+      <SolidColorBrush x:Key="InkBrush" Color="#E6EDF7" />
+      <SolidColorBrush x:Key="MutedBrush" Color="#9AA9BF" />
+      <SolidColorBrush x:Key="LineBrush" Color="#25344C" />
+      <SolidColorBrush x:Key="AccentBrush" Color="#E2B44A" />
+      <SolidColorBrush x:Key="AccentInkBrush" Color="#1E1503" />
+      <SolidColorBrush x:Key="StageBrush" Color="#08101C" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <FontFamily x:Key="DisplayFont">avares://azl-dl-app/Assets/Fonts#Chakra Petch</FontFamily>
+  <FontFamily x:Key="BodyFont">avares://azl-dl-app/Assets/Fonts#M PLUS 1p</FontFamily>
+  <FontFamily x:Key="DataFont">avares://azl-dl-app/Assets/Fonts#Chakra Petch</FontFamily>
+
+  <x:Double x:Key="PanelChamfer">14</x:Double>
+  <x:Double x:Key="ShipNameSize">58</x:Double>
+  <FontWeight x:Key="ShipNameWeight">Bold</FontWeight>
+  <FontStyle x:Key="ShipNameStyle">Normal</FontStyle>
+  <x:Double x:Key="NameBandHeight">4</x:Double>
+  <x:Boolean x:Key="SkinPlateNumbers">False</x:Boolean>
+  <x:Boolean x:Key="ShipNameUppercase">True</x:Boolean>
+
+  <!-- Stat tiles, as on the game's ship screen. -->
+  <DataTemplate x:Key="StatsTemplate" x:DataType="data:ShipInfo">
+    <ItemsControl ItemsSource="{Binding Stats}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel ItemWidth="124" ItemHeight="72" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="data:StatValue">
+          <controls:ChamferBorder Chamfer="10" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Margin="0,0,8,8"
+                                  Padding="12,8">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="muted" Text="{Binding Label}" />
+              <TextBlock Classes="data value" FontSize="22" FontWeight="SemiBold" Text="{Binding Value}" />
+            </StackPanel>
+          </controls:ChamferBorder>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </DataTemplate>
+</ResourceDictionary>

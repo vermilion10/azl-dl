@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="40,32" Spacing="36" MaxWidth="1100" HorizontalAlignment="Left">
+      <TextBlock Text="{Binding ResetNotice}" IsVisible="{Binding ResetNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                 Classes="accent" TextWrapping="Wrap" />
+
+      <StackPanel>
+        <TextBlock Classes="heading" Text="Style" />
+        <ListBox Classes="styles" ItemsSource="{Binding Styles}" SelectedItem="{Binding SelectedStyle}"
+                 Background="Transparent" AutomationProperties.Name="Style">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:StyleOption">
+              <controls:StylePreview PreviewStyle="{Binding Style}" Width="300">
+                <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+                  <controls:ChamferBorder Classes="panel" Margin="12" Padding="18,16">
+                    <StackPanel Spacing="10">
+                      <controls:ShipNameText NameText="Enterprise" FontSize="40" LineHeight="40"
+                                             Foreground="{DynamicResource InkBrush}" />
+                      <DockPanel>
+                        <Border DockPanel.Dock="Right" Width="18" Height="18" Background="{DynamicResource AccentBrush}" />
+                        <TextBlock Classes="data" Foreground="{DynamicResource InkBrush}" Text="AVI 207" />
+                      </DockPanel>
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource InkBrush}"
+                                 FontFamily="{DynamicResource BodyFont}" />
+                      <TextBlock Text="{Binding Description}" Foreground="{DynamicResource MutedBrush}"
+                                 FontFamily="{DynamicResource BodyFont}" TextWrapping="Wrap" FontSize="13" />
+                    </StackPanel>
+                  </controls:ChamferBorder>
+                </Border>
+              </controls:StylePreview>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </StackPanel>
+
+      <StackPanel>
+        <TextBlock Classes="heading" Text="Light or dark" />
+        <ListBox ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" Classes="picker"
+                 AutomationProperties.Name="Light or dark" HorizontalAlignment="Left">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="6" />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ThemeOption">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </StackPanel>
+
+      <StackPanel Spacing="8">
+        <TextBlock Classes="heading" Text="Data folder" />
+        <TextBlock Classes="muted" TextWrapping="Wrap"
+                   Text="Downloaded bundles and decoded game data live here, in the same layout the command-line tool writes." />
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Choose folder" Click="OnChooseFolder" Margin="12,0,0,0" />
+          <TextBlock Classes="data" Text="{Binding DataFolder}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        </DockPanel>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:data="using:AzlDl.Core.Data"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.ShipsView"
+             x:DataType="vm:ShipsViewModel">
+  <Panel>
+    <!-- Loading and problem states cover the page until the data is in. -->
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="Ship data isn't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="280,*,440">
+      <!-- Ship list -->
+      <DockPanel Background="{DynamicResource SurfaceBrush}">
+        <TextBox DockPanel.Dock="Top" Margin="16,16,16,8" PlaceholderText="Search ships" Text="{Binding Filter}"
+                 AutomationProperties.Name="Search ships" />
+        <TextBlock DockPanel.Dock="Bottom" Classes="muted data" Margin="16,8" FontSize="12"
+                   Text="{Binding Ships.Count, StringFormat='{}{0} ships'}" />
+        <ListBox Classes="picker" ItemsSource="{Binding Ships}" SelectedItem="{Binding SelectedShip}"
+                 AutomationProperties.Name="Ships">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="data:ShipInfo">
+              <StackPanel Spacing="1">
+                <TextBlock Text="{Binding Name}" FontWeight="Medium" />
+                <TextBlock Classes="muted" FontSize="12" Text="{Binding TypeName}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <!-- Painting stage -->
+      <Border Grid.Column="1" Background="{DynamicResource StageBrush}">
+        <Panel Margin="24">
+          <Image Source="{Binding Painting}" IsVisible="{Binding PaintingShown}" Stretch="Uniform" />
+          <StackPanel IsVisible="{Binding !PaintingShown}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                      Spacing="12" MaxWidth="380">
+            <TextBlock Classes="data" Text="{Binding SelectedSkin.Painting}" FontSize="18" FontWeight="Medium"
+                       HorizontalAlignment="Center" />
+            <TextBlock Classes="muted" Text="{Binding PaintingMessage}" TextWrapping="Wrap" TextAlignment="Center" />
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding PaintingBusy}" />
+            <Button Classes="primary" IsVisible="{Binding CanDownloadPainting}" Command="{Binding DownloadPaintingCommand}"
+                    HorizontalAlignment="Center" Content="Download painting" />
+          </StackPanel>
+        </Panel>
+      </Border>
+
+      <!-- Ship details -->
+      <ScrollViewer Grid.Column="2">
+        <controls:ChamferBorder Classes="panel" Margin="0" Padding="30,28">
+          <StackPanel Spacing="30">
+            <StackPanel Spacing="6">
+              <Border Height="{DynamicResource NameBandHeight}" Background="{DynamicResource AccentBrush}" Margin="0,0,0,8"
+                      HorizontalAlignment="Stretch" />
+              <TextBlock Classes="data muted" FontSize="12" Text="{Binding SelectedShip.StatsId, StringFormat='SHIP {0}'}" />
+              <controls:ShipNameText NameText="{Binding SelectedShip.Name}" />
+              <WrapPanel>
+                <TextBlock Classes="muted" Text="{Binding SelectedShip.TypeName}" Margin="0,0,16,0" />
+                <TextBlock Classes="muted" Text="{Binding SelectedShip.NationName}" Margin="0,0,16,0" />
+                <TextBlock Classes="accent" Text="{Binding SelectedShip.RarityName}" />
+              </WrapPanel>
+            </StackPanel>
+
+            <StackPanel>
+              <TextBlock Classes="heading" Text="Stats" />
+              <ContentControl Content="{Binding SelectedShip}" ContentTemplate="{DynamicResource StatsTemplate}" />
+              <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0"
+                         Text="Level 1, fully limit broken, from ship_data_statistics." />
+            </StackPanel>
+
+            <StackPanel>
+              <TextBlock Classes="heading" Text="Skins" />
+              <ListBox Classes="picker" ItemsSource="{Binding SelectedShip.Skins}" SelectedItem="{Binding SelectedSkin}"
+                       AutomationProperties.Name="Skins">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="data:SkinInfo">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Right" Classes="data muted" FontSize="12" Text="{Binding Painting}"
+                                 VerticalAlignment="Center" />
+                      <TextBlock DockPanel.Dock="Left" Classes="data muted" FontSize="12" Width="44" VerticalAlignment="Center"
+                                 IsVisible="{DynamicResource SkinPlateNumbers}" Text="{Binding Number, StringFormat='Pl. {0}'}" />
+                      <TextBlock Text="{Binding Name}" />
+                    </DockPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </StackPanel>
+          </StackPanel>
+        </controls:ChamferBorder>
+      </ScrollViewer>
+    </Grid>
+  </Panel>
+</UserControl>

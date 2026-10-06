@@ -1,0 +1,96 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using AzlDl.App.Settings;
+using AzlDl.App.Theming;
+using AzlDl.App.ViewModels;
+using AzlDl.App.Views;
+using Xunit;
+
+namespace AzlDl.App.Tests;
+
+public class StyleTests
+{
+    public static TheoryData<AppStyle> AllStyles => new(Enum.GetValues<AppStyle>());
+
+    // Every style defines every token, brushes in both variants. A missing key would silently fall back to
+    // another style's value or to nothing.
+    [AvaloniaTheory]
+    [MemberData(nameof(AllStyles))]
+    public void Style_defines_every_token(AppStyle style)
+    {
+        var dictionary = StyleManager.Load(style);
+        foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
+        {
+            foreach (var key in StyleTokens.Brushes)
+            {
+                Assert.True(dictionary.TryGetResource(key, variant, out var value) && value is not null,
+                    $"{style} has no {key} for {variant}");
+            }
+        }
+
+        foreach (var key in StyleTokens.Shared)
+        {
+            Assert.True(dictionary.TryGetResource(key, ThemeVariant.Default, out var value) && value is not null,
+                $"{style} has no {key}");
+        }
+    }
+
+    // Renders the ship page in every style and theme to tests/output for review. Needs decoded game data; point
+    // AZLDL_DATA at a folder written by the command-line tool.
+    [AvaloniaTheory]
+    [InlineData(AppStyle.ChartRoom, ThemeMode.Light)]
+    [InlineData(AppStyle.ChartRoom, ThemeMode.Dark)]
+    [InlineData(AppStyle.RegistryBook, ThemeMode.Light)]
+    [InlineData(AppStyle.RegistryBook, ThemeMode.Dark)]
+    [InlineData(AppStyle.PortMenu, ThemeMode.Light)]
+    [InlineData(AppStyle.PortMenu, ThemeMode.Dark)]
+    public async Task Ship_page_renders(AppStyle style, ThemeMode theme)
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = style, Theme = theme, DataFolder = dataFolder! };
+        StyleManager.Apply(app, style, theme);
+
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        await main.Ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(main.Ships.IsReady, main.Ships.Message);
+        Assert.NotNull(main.Ships.SelectedShip);
+        Assert.NotNull(main.Ships.SelectedSkin);
+        var skinList = window.GetVisualDescendants().OfType<ListBox>()
+            .Single(l => Avalonia.Automation.AutomationProperties.GetName(l) == "Skins");
+        Assert.Same(main.Ships.SelectedSkin, skinList.SelectedItem);
+
+        // Show a painting when one has been extracted already (Enterprise's qiye_5 in the reference data set).
+        if (main.Ships.SelectedShip!.Skins.FirstOrDefault(s => s.Painting == "qiye_5") is { } skin)
+        {
+            main.Ships.SelectedSkin = skin;
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        var frame = window.CaptureRenderedFrame();
+        Assert.NotNull(frame);
+        var output = Path.Combine(OutputFolder(), $"ships-{style}-{theme}.png");
+#pragma warning disable CS0618 // The replacement overload needs a concrete encoder options type this version doesn't expose.
+        frame!.Save(output);
+#pragma warning restore CS0618
+        window.Close();
+    }
+
+    private static string OutputFolder()
+    {
+        var folder = Path.Combine(AppContext.BaseDirectory, "snapshots");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+}
