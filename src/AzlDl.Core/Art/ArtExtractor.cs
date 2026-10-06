@@ -9,10 +9,12 @@ public sealed record ExtractSummary(int Bundles, int Images, int Paintings, int 
 // Converts downloaded bundles into plain files under OutputDirectory:
 // - painting/<name>_tex bundles become art/painting/<name>.png, reassembled from tiles when the painting has a mesh;
 // - every other Texture2D becomes <bundle path>/<texture name>.png;
-// - TextAssets (Spine .skel and .atlas files, for example) are written as-is under <bundle path>/.
+// - TextAssets (Spine .skel and .atlas files, for example) are written as-is under <bundle path>/;
+// - live2d/<name> bundles also get <name>.moc3 and a <name>.model3.json.
 public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
 {
     private const string PaintingFolder = "painting/";
+    private const string Live2DFolder = "live2d/";
     private const string TextureSuffix = "_tex";
     private const string MeshSuffix = "-mesh";
 
@@ -84,12 +86,87 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
                 files++;
             }
 
+            if (bundlePath.StartsWith(Live2DFolder, StringComparison.Ordinal))
+            {
+                files += ExtractLive2D(manager, instance, bundlePath);
+            }
+
             return (images, paintings, files);
         }
         finally
         {
             manager.UnloadAll(true);
         }
+    }
+
+    // Live2D bundles are Cubism for Unity prefabs. The model itself is the byte array in the CubismMoc component;
+    // written next to the textures and physics file with a model3.json that ties them together, it loads in standard
+    // Cubism viewers. Motions are Unity AnimationClips and aren't converted.
+    private int ExtractLive2D(AssetsManager manager, AssetsFileInstance instance, string bundlePath)
+    {
+        var scripts = new Dictionary<long, string>();
+        foreach (var info in instance.file.GetAssetsOfType(AssetClassID.MonoScript))
+        {
+            scripts[info.PathId] = manager.GetBaseField(instance, info)["m_Name"].AsString;
+        }
+
+        var mocPathIds = scripts.Where(s => s.Value == "CubismMoc").Select(s => s.Key).ToHashSet();
+        if (mocPathIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var name = Path.GetFileName(bundlePath);
+        foreach (var info in instance.file.GetAssetsOfType(AssetClassID.MonoBehaviour))
+        {
+            // Read the script pointer cheaply before deserializing the whole component.
+            var header = manager.GetBaseField(instance, info, AssetReadFlags.SkipMonoBehaviourFields);
+            if (!mocPathIds.Contains(header["m_Script.m_PathID"].AsLong))
+            {
+                continue;
+            }
+
+            var moc = manager.GetBaseField(instance, info)["_bytes.Array"];
+            if (moc.IsDummy)
+            {
+                continue;
+            }
+
+            var mocFile = name + ".moc3";
+            File.WriteAllBytes(Target(bundlePath, mocFile), moc.AsByteArray);
+
+            var folder = Path.Combine(outputDirectory, bundlePath);
+            var textures = Directory.EnumerateFiles(folder, "texture_*.png").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToList();
+            var physics = Directory.EnumerateFiles(folder, "*.physics3*").Select(Path.GetFileName).FirstOrDefault();
+            WriteModelJson(Target(bundlePath, name + ".model3.json"), mocFile, textures!, physics);
+            return 2;
+        }
+
+        return 0;
+    }
+
+    private static void WriteModelJson(string path, string moc, IReadOnlyList<string> textures, string? physics)
+    {
+        using var stream = File.Create(path);
+        using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions { Indented = true });
+        writer.WriteStartObject();
+        writer.WriteNumber("Version", 3);
+        writer.WriteStartObject("FileReferences");
+        writer.WriteString("Moc", moc);
+        writer.WriteStartArray("Textures");
+        foreach (var texture in textures)
+        {
+            writer.WriteStringValue(texture);
+        }
+
+        writer.WriteEndArray();
+        if (physics is not null)
+        {
+            writer.WriteString("Physics", physics);
+        }
+
+        writer.WriteEndObject();
+        writer.WriteEndObject();
     }
 
     // The mesh usually sits next to the texture in the _tex bundle; for some paintings it is in the sibling bundle.
