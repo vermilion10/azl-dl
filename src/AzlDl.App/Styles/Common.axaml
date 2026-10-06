@@ -92,6 +92,26 @@
     <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
   </Style>
 
+  <!-- Style cards in Settings: the chosen one gets an accent outline instead of a filled background. -->
+  <Style Selector="ListBox.styles ListBoxItem">
+    <Setter Property="Padding" Value="4" />
+    <Setter Property="Margin" Value="0,0,16,16" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="ListBox.styles ListBoxItem /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="ListBox.styles ListBoxItem:pointerover">
+    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+  </Style>
+  <Style Selector="ListBox.styles ListBoxItem:selected">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="ListBox.styles ListBoxItem:selected /template/ ContentPresenter, ListBox.styles ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
   <!-- The page's main action fills with the accent; everything else stays outlined. -->
   <Style Selector="Button.primary">
     <Setter Property="Background" Value="{DynamicResource AccentBrush}" />

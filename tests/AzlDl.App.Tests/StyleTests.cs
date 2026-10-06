@@ -87,6 +87,37 @@ public class StyleTests
         window.Close();
     }
 
+    // Picking a style in Settings swaps the app's resources at once, and the Settings page shows all three styles.
+    [AvaloniaFact]
+    public void Settings_switches_style_live()
+    {
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.ChartRoom, Theme = ThemeMode.Light, DataFolder = Path.GetTempPath() };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is SettingsViewModel);
+        Dispatcher.UIThread.RunJobs();
+
+        string Background() =>
+            window.TryFindResource(StyleTokens.BgBrush, window.ActualThemeVariant, out var brush)
+                ? ((Avalonia.Media.ISolidColorBrush)brush!).Color.ToString()
+                : "missing";
+
+        Assert.Equal("#ffeef2f4", Background());
+        main.SettingsPage.SelectedStyle = main.SettingsPage.Styles.Single(s => s.Style == AppStyle.PortMenu);
+        main.SettingsPage.SelectedTheme = main.SettingsPage.Themes.Single(t => t.Mode == ThemeMode.Dark);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal("#ff0b1220", Background());
+
+        var frame = window.CaptureRenderedFrame();
+#pragma warning disable CS0618
+        frame!.Save(Path.Combine(OutputFolder(), "settings-PortMenu-Dark.png"));
+#pragma warning restore CS0618
+        window.Close();
+    }
+
     private static string OutputFolder()
     {
         var folder = Path.Combine(AppContext.BaseDirectory, "snapshots");

@@ -24,7 +24,7 @@
                 <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
                   <controls:ChamferBorder Classes="panel" Margin="12" Padding="18,16">
                     <StackPanel Spacing="10">
-                      <controls:ShipNameText NameText="Enterprise" FontSize="40" LineHeight="40"
+                      <controls:ShipNameText NameText="Enterprise" FontSize="36" LineHeight="40" TextWrapping="NoWrap"
                                              Foreground="{DynamicResource InkBrush}" />
                       <DockPanel>
                         <Border DockPanel.Dock="Right" Width="18" Height="18" Background="{DynamicResource AccentBrush}" />
