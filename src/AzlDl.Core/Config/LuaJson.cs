@@ -8,6 +8,18 @@ namespace AzlDl.Core.Config;
 // Entries keep the order the game assigned them in.
 public static class LuaJson
 {
+    // Writes a value as indented JSON, keeping non-ASCII text (Chinese, Japanese) readable instead of escaped.
+    public static void WriteFile(string path, object? value)
+    {
+        using var stream = File.Create(path);
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions
+        {
+            Indented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+        Write(writer, value);
+    }
+
     public static void Write(Utf8JsonWriter writer, object? value)
     {
         switch (value)

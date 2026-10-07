@@ -3,6 +3,7 @@ using AzlDl.Core;
 using AzlDl.Core.Config;
 using AzlDl.Core.Download;
 using AzlDl.Core.Gate;
+using AzlDl.Core.Pipeline;
 using AzlDl.Core.Scripts;
 using AzlDl.Core.Unity;
 using AzlDl.Core.Versioning;
@@ -40,8 +41,63 @@ public static class Program
         root.Subcommands.Add(BuildStoryCommand());
         root.Subcommands.Add(BuildShareCfgCommand());
         root.Subcommands.Add(BuildExtractCommand());
+        root.Subcommands.Add(BuildUpdateCommand(regionOption));
 
         return await root.Parse(args).InvokeAsync();
+    }
+
+    private static Command BuildUpdateCommand(Option<string> regionOption)
+    {
+        var dataOption = new Option<string>("--data")
+        {
+            Description = "Data folder to update (same layout as the other commands' output folder)",
+            DefaultValueFactory = _ => "output",
+        };
+
+        var forceOption = new Option<bool>("--force")
+        {
+            Description = "Decode again even if the data is already at the current version",
+        };
+
+        var command = new Command("update", "Download and decode the current game data (tables, scripts, stories) in one step.");
+        command.Options.Add(dataOption);
+        command.Options.Add(forceOption);
+
+        command.SetAction(async (parse, cancellationToken) =>
+        {
+            var region = RequireRegion(parse, regionOption);
+            if (region is null)
+            {
+                return 1;
+            }
+
+            var updater = new GameDataUpdater(Http.Value, region, parse.GetValue(dataOption)!);
+            try
+            {
+                var summary = await updater.UpdateAsync(parse.GetValue(forceOption),
+                    new Progress<UpdateProgress>(p => Console.Error.WriteLine(p.Message)), cancellationToken);
+                foreach (var failure in summary.Failures)
+                {
+                    Console.Error.WriteLine($"FAIL {failure}");
+                }
+
+                if (!summary.AlreadyCurrent)
+                {
+                    Console.Error.WriteLine(
+                        $"{summary.Tables} config tables, {summary.ShareCfgTables} sharecfg tables, {summary.Stories} stories");
+                }
+
+                return summary.Failures.Count > 0 ? 1 : 0;
+            }
+            catch (Exception e) when (e is IOException or HttpRequestException or InvalidDataException
+                                          or System.Net.Sockets.SocketException or OperationCanceledException)
+            {
+                Console.Error.WriteLine($"Update failed: {e.Message}");
+                return 1;
+            }
+        });
+
+        return command;
     }
 
     private static Command BuildExtractCommand()
@@ -152,74 +208,9 @@ public static class Program
             }
 
             var filters = parse.GetValue(filtersArgument) ?? [];
-            var interpreter = new ConfigInterpreter();
-            var failures = new List<string>();
-            var ran = 0;
-            foreach (var file in Directory.EnumerateFiles(source, "*.lua.bytes", SearchOption.AllDirectories)
-                         .Order(StringComparer.Ordinal))
-            {
-                var name = Path.GetFileName(file)[..^".lua.bytes".Length];
-                if (!Matches(name, filters))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    foreach (var prototype in ConfigChunkReader.ReadAll(File.ReadAllBytes(file)))
-                    {
-                        interpreter.Run(prototype);
-                    }
-
-                    ran++;
-                }
-                catch (Exception e) when (e is InvalidDataException or InvalidCastException or IndexOutOfRangeException)
-                {
-                    failures.Add($"{name}: {e.Message}");
-                }
-            }
-
-            // The game keeps a table's rows in pg.base.<name> and its lookup lists (all, indexes) in pg.<name>.
             var output = parse.GetValue(outputOption)!;
-            Directory.CreateDirectory(output);
-            var written = 0;
-            var names = interpreter.Pg.Entries.Keys.OfType<string>()
-                .Concat(interpreter.Base.Entries.Keys.OfType<string>())
-                .Where(n => n != "base")
-                .Distinct();
-            foreach (var name in names)
-            {
-                var merged = new LuaTable();
-                foreach (var part in new[] { interpreter.Base[name], interpreter.Pg[name] })
-                {
-                    if (part is not LuaTable table)
-                    {
-                        continue;
-                    }
-
-                    foreach (var (key, value) in table.Entries)
-                    {
-                        if (!Equals(key, "__name"))
-                        {
-                            merged[key] = value;
-                        }
-                    }
-                }
-
-                if (merged.Count > 0)
-                {
-                    WriteJsonFile(Path.Combine(output, $"{name}.json"), merged);
-                    written++;
-                }
-            }
-
-            foreach (var failure in failures)
-            {
-                Console.Error.WriteLine($"FAIL {failure}");
-            }
-
-            Console.Error.WriteLine($"{ran} scripts ran, {failures.Count} failed, {written} tables written to {output}");
-            return failures.Count > 0 ? 1 : 0;
+            var result = DataDecoders.RunShareCfg(source, output, name => Matches(name, filters));
+            return Report(result, $"{result.Inputs - result.Failures.Count} scripts ran, {result.Failures.Count} failed, {result.Outputs} tables written to {output}");
         });
 
         return command;
@@ -261,58 +252,22 @@ public static class Program
 
             var filters = parse.GetValue(filtersArgument) ?? [];
             var output = parse.GetValue(outputOption)!;
-            Directory.CreateDirectory(output);
-
-            var written = 0;
-            var failed = 0;
-            foreach (var file in Directory.EnumerateFiles(source, "*.lua.bytes").Order(StringComparer.Ordinal))
-            {
-                var name = Path.GetFileName(file)[..^".lua.bytes".Length];
-                if (!Matches(name, filters))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var interpreter = new ConfigInterpreter();
-                    object? story = null;
-                    foreach (var prototype in ConfigChunkReader.ReadAll(File.ReadAllBytes(file)))
-                    {
-                        story = interpreter.Run(prototype);
-                    }
-
-                    if (story is null)
-                    {
-                        throw new InvalidDataException("The script doesn't return a table.");
-                    }
-
-                    WriteJsonFile(Path.Combine(output, $"{name}.json"), story);
-                    written++;
-                }
-                catch (Exception e) when (e is InvalidDataException or InvalidCastException or IndexOutOfRangeException)
-                {
-                    failed++;
-                    Console.Error.WriteLine($"FAIL {name}: {e.Message}");
-                }
-            }
-
-            Console.Error.WriteLine($"{written} stories written to {output}, {failed} failed");
-            return failed > 0 ? 1 : 0;
+            var result = DataDecoders.DecodeStories(source, output, name => Matches(name, filters));
+            return Report(result, $"{result.Outputs} stories written to {output}, {result.Failures.Count} failed");
         });
 
         return command;
     }
 
-    private static void WriteJsonFile(string path, object? value)
+    private static int Report(DecodeResult result, string summary)
     {
-        using var stream = File.Create(path);
-        using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions
+        foreach (var failure in result.Failures)
         {
-            Indented = true,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        });
-        LuaJson.Write(writer, value);
+            Console.Error.WriteLine($"FAIL {failure}");
+        }
+
+        Console.Error.WriteLine(summary);
+        return result.Failures.Count > 0 ? 1 : 0;
     }
 
     private static Command BuildScriptsCommand()
@@ -342,37 +297,17 @@ public static class Program
                 return 1;
             }
 
-            var data = File.ReadAllBytes(bundlePath);
-            if (ScriptBundleCipher.LooksEncrypted(data))
+            var output = parse.GetValue(outputOption)!;
+            try
             {
-                data = ScriptBundleCipher.Decrypt(data);
+                var result = DataDecoders.ExtractScripts(bundlePath, output);
+                return Report(result, $"{result.Outputs} scripts written to {output}");
             }
-            else if (!BundleInspector.IsUnityFsBytes(data))
+            catch (InvalidDataException e)
             {
-                Console.Error.WriteLine($"{bundlePath} is neither a bundle nor an encrypted scripts bundle.");
+                Console.Error.WriteLine(e.Message);
                 return 1;
             }
-
-            var output = parse.GetValue(outputOption)!;
-            var count = 0;
-            long bytes = 0;
-            foreach (var script in ScriptBundle.ReadScripts(data))
-            {
-                var target = Path.GetFullPath(Path.Combine(output, script.Path));
-                if (!target.StartsWith(Path.GetFullPath(output), StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.Error.WriteLine($"Skipped {script.Path}: path leaves the output folder");
-                    continue;
-                }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                File.WriteAllBytes(target, script.Data);
-                count++;
-                bytes += script.Data.Length;
-            }
-
-            Console.Error.WriteLine($"{count} scripts ({FormatSize(bytes)}) written to {output}");
-            return 0;
         });
 
         return command;
@@ -413,47 +348,15 @@ public static class Program
             }
 
             var filters = parse.GetValue(filtersArgument) ?? [];
-            var files = Directory.EnumerateFiles(source)
-                .Where(f => Path.GetExtension(f).Length == 0 && Matches(Path.GetFileName(f), filters))
-                .Order(StringComparer.Ordinal)
-                .ToList();
-            if (files.Count == 0)
+            var output = parse.GetValue(outputOption)!;
+            var result = DataDecoders.DecodeConfig(source, output, name => Matches(name, filters), new Progress<string>(Console.WriteLine));
+            if (result.Inputs == 0)
             {
                 Console.Error.WriteLine($"No sharecfgdata files in {source} match.");
                 return 1;
             }
 
-            var interpreter = new ConfigInterpreter();
-            var failed = 0;
-            foreach (var file in files)
-            {
-                try
-                {
-                    var count = 0;
-                    foreach (var prototype in ConfigChunkReader.ReadAll(File.ReadAllBytes(file)))
-                    {
-                        interpreter.Run(prototype);
-                        count++;
-                    }
-
-                    Console.WriteLine($"{Path.GetFileName(file),-34} {count,7} entries");
-                }
-                catch (InvalidDataException e)
-                {
-                    failed++;
-                    Console.Error.WriteLine($"FAIL {Path.GetFileName(file)}: {e.Message}");
-                }
-            }
-
-            var output = parse.GetValue(outputOption)!;
-            Directory.CreateDirectory(output);
-            foreach (var (name, table) in interpreter.Base.Entries)
-            {
-                WriteJsonFile(Path.Combine(output, $"{name}.json"), table);
-            }
-
-            Console.Error.WriteLine($"{interpreter.Base.Count} tables written to {output}, {failed} files failed");
-            return failed > 0 ? 1 : 0;
+            return Report(result, $"{result.Outputs} tables written to {output}, {result.Failures.Count} files failed");
         });
 
         return command;
