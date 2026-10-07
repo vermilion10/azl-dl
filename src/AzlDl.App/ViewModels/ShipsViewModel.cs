@@ -74,6 +74,12 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     public string DataFolder => settings.DataFolder;
 
+    // Set by the shell; shows the Sync section.
+    public Action? OpenSync { get; set; }
+
+    [RelayCommand]
+    private void GoToSync() => OpenSync?.Invoke();
+
     public async Task LoadAsync()
     {
         State = LoadState.Loading;
@@ -86,8 +92,8 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             all = [];
             Ships.Clear();
             State = LoadState.MissingData;
-            Message = $"No game data in {folder} yet. It needs {string.Join(", ", missing)}. " +
-                      "Prepare it with the command-line tool (download, config, sharecfg), or pick another folder in Settings.";
+            Message = $"There's no game data in {folder} yet. Update it from Sync (about 150 MB to download), " +
+                      "or pick a folder that already has it in Settings.";
             OnPropertyChanged(nameof(DataFolder));
             return;
         }

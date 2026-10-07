@@ -118,6 +118,68 @@ public class StyleTests
         window.Close();
     }
 
+    // With no game data, Ships explains why and its button really opens Sync.
+    [AvaloniaFact]
+    public async Task Empty_data_folder_points_to_sync()
+    {
+        var app = Application.Current!;
+        var empty = Directory.CreateTempSubdirectory("azl-dl-empty").FullName;
+        var settings = new AppSettings { Style = AppStyle.RegistryBook, Theme = ThemeMode.Light, DataFolder = empty };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        await main.Ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(main.Ships.HasProblem);
+        Assert.Contains(empty, main.Ships.Message);
+        SaveFrame(window, "ships-empty-RegistryBook-Light.png");
+
+        main.Ships.GoToSyncCommand.Execute(null);
+        Assert.IsType<SyncViewModel>(main.SelectedSection.Page);
+        window.Close();
+    }
+
+    // Sync lists every category the server reports, with sizes. Needs network access to the game server.
+    [AvaloniaFact]
+    public async Task Sync_lists_server_categories()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.ChartRoom, Theme = ThemeMode.Dark, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is SyncViewModel);
+        await main.Sync.CheckCategoriesCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(10, main.Sync.Categories.Count);
+        SaveFrame(window, "sync-ChartRoom-Dark.png");
+
+        // A full-category download needs a second, explicit confirmation; cancelling leaves nothing running.
+        var row = main.Sync.Categories.First(c => c.CanDownload);
+        row.AskDownloadCommand.Execute(null);
+        Assert.True(row.Confirming);
+        Assert.False(row.CanDownload);
+        Assert.Contains(row.Name, row.ConfirmText);
+        row.CancelDownloadCommand.Execute(null);
+        Assert.False(row.Confirming);
+        Assert.False(row.Busy);
+        window.Close();
+    }
+
+    private static void SaveFrame(Window window, string name)
+    {
+#pragma warning disable CS0618 // The replacement overload needs an encoder options type this version doesn't expose.
+        window.CaptureRenderedFrame()!.Save(Path.Combine(OutputFolder(), name));
+#pragma warning restore CS0618
+    }
+
     private static string OutputFolder()
     {
         var folder = Path.Combine(AppContext.BaseDirectory, "snapshots");

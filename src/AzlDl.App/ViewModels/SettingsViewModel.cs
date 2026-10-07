@@ -14,13 +14,13 @@ public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly Application app;
     private readonly AppSettings settings;
-    private readonly ShipsViewModel ships;
+    private readonly Func<Task> onDataFolderChanged;
 
-    public SettingsViewModel(Application app, AppSettings settings, ShipsViewModel ships)
+    public SettingsViewModel(Application app, AppSettings settings, Func<Task> onDataFolderChanged)
     {
         this.app = app;
         this.settings = settings;
-        this.ships = ships;
+        this.onDataFolderChanged = onDataFolderChanged;
         selectedStyle = Styles.First(s => s.Style == settings.Style);
         selectedTheme = Themes.First(t => t.Mode == settings.Theme);
         dataFolder = settings.DataFolder;
@@ -71,6 +71,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         DataFolder = folder;
         settings.DataFolder = folder;
         settings.Save();
-        await ships.LoadAsync();
+        await onDataFolderChanged();
     }
 }

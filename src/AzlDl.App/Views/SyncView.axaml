@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.SyncView"
+             x:DataType="vm:SyncViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="40,32" Spacing="40" MaxWidth="1000" HorizontalAlignment="Left">
+
+      <!-- Game data: one action that downloads and decodes everything the app reads. -->
+      <controls:ChamferBorder Classes="panel" Padding="28,24">
+        <StackPanel Spacing="16">
+          <TextBlock Classes="heading" Text="Game data" Margin="0" />
+          <TextBlock Text="{Binding InstalledVersion}" TextWrapping="Wrap" FontSize="18" FontWeight="Medium" />
+          <TextBlock Classes="muted" TextWrapping="Wrap"
+                     Text="Downloads the stat, skin, skill and story tables (about 150 MB) and decodes them. Runs again only when the game updates." />
+          <Button Classes="primary" Content="Update game data" Command="{Binding UpdateGameDataCommand}" HorizontalAlignment="Left" />
+
+          <ItemsControl ItemsSource="{Binding Steps}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:UpdateStep">
+                <DockPanel Margin="0,4">
+                  <TextBlock DockPanel.Dock="Right" Classes="data muted" Text="{Binding Marker}" />
+                  <TextBlock Text="{Binding Title}" />
+                </DockPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding Updating}" />
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding Failures}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="x:String">
+                <TextBlock Classes="data muted" FontSize="12" Text="{Binding}" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </controls:ChamferBorder>
+
+      <!-- Asset categories: sizes on the server and what is already on disk. -->
+      <StackPanel Spacing="16">
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="Check server" Command="{Binding CheckCategoriesCommand}" />
+          <TextBlock Classes="heading" Text="Asset categories" VerticalAlignment="Center" Margin="0" />
+        </DockPanel>
+        <TextBlock Classes="muted" Text="{Binding CategoryStatus}" TextWrapping="Wrap" />
+        <ProgressBar IsIndeterminate="True" IsVisible="{Binding CheckingCategories}" />
+
+        <ItemsControl ItemsSource="{Binding Categories}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CategoryRow">
+              <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="0,14">
+                <StackPanel Spacing="8">
+                  <Grid ColumnDefinitions="200,*,Auto">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontFamily="{DynamicResource DisplayFont}" FontSize="22" FontWeight="Bold" />
+                      <TextBlock Classes="data muted" FontSize="12">
+                        <Run Text="{Binding InternalName}" /><Run Text=" " /><Run Text="{Binding Version.Version}" />
+                      </TextBlock>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <TextBlock Classes="data" Text="{Binding Remote}" />
+                      <TextBlock Classes="data muted" Text="{Binding Local}" />
+                    </StackPanel>
+                    <Button Grid.Column="2" Content="Download all" IsVisible="{Binding CanDownload}"
+                            Command="{Binding AskDownloadCommand}" VerticalAlignment="Center" />
+                  </Grid>
+                  <!-- In-page confirmation, so a multi-gigabyte download never starts from one stray click. -->
+                  <DockPanel IsVisible="{Binding Confirming}">
+                    <Button DockPanel.Dock="Right" Content="Cancel" Command="{Binding CancelDownloadCommand}" Margin="8,0,0,0" />
+                    <Button DockPanel.Dock="Right" Classes="primary" Content="Download" Command="{Binding ConfirmDownloadCommand}" />
+                    <TextBlock Text="{Binding ConfirmText}" VerticalAlignment="Center" />
+                  </DockPanel>
+                  <ProgressBar IsVisible="{Binding Busy}" Value="{Binding Progress}" Maximum="100" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

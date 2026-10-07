@@ -12,12 +12,20 @@ public sealed partial class MainViewModel : ObservableObject
     public MainViewModel(Application app, AppSettings settings)
     {
         Ships = new ShipsViewModel(settings);
-        SettingsPage = new SettingsViewModel(app, settings, Ships);
-        Sections = [new Section("Ships", Ships), new Section("Settings", SettingsPage)];
+        Sync = new SyncViewModel(settings, () => Ships.LoadAsync());
+        SettingsPage = new SettingsViewModel(app, settings, async () =>
+        {
+            Sync.RefreshInstalled();
+            await Ships.LoadAsync();
+        });
+        Sections = [new Section("Ships", Ships), new Section("Sync", Sync), new Section("Settings", SettingsPage)];
         selectedSection = Sections[0];
+        Ships.OpenSync = () => SelectedSection = Sections[1];
     }
 
     public ShipsViewModel Ships { get; }
+
+    public SyncViewModel Sync { get; }
 
     public SettingsViewModel SettingsPage { get; }
 

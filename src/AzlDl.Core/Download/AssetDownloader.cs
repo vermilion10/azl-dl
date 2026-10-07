@@ -133,6 +133,10 @@ public sealed class AssetDownloader(HttpClient http, CdnClient cdn)
         }
     }
 
+    // Bundle path -> MD5 of the copy on disk, for every file this downloader has fetched into assetDirectory.
+    public static IReadOnlyDictionary<string, string> ReadState(string assetDirectory) =>
+        LoadState(Path.Combine(assetDirectory, StateFileName));
+
     private static Dictionary<string, string> LoadState(string path)
     {
         if (!File.Exists(path))
