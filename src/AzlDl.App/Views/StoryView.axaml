@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:data="using:AzlDl.Core.Data"
+             x:Class="AzlDl.App.Views.StoryView"
+             x:DataType="vm:StoryViewModel">
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="Stories aren't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="300,300,*">
+      <!-- Chapters -->
+      <DockPanel Background="{DynamicResource SurfaceBrush}">
+        <ComboBox DockPanel.Dock="Top" Margin="16,16,16,8" HorizontalAlignment="Stretch" ItemsSource="{Binding Categories}"
+                  SelectedItem="{Binding SelectedCategory}" AutomationProperties.Name="Story category" />
+        <TextBox DockPanel.Dock="Top" Margin="16,0,16,8" PlaceholderText="Search chapters and stories" Text="{Binding Filter}"
+                 AutomationProperties.Name="Search stories" />
+        <ListBox Classes="picker" ItemsSource="{Binding Groups}" SelectedItem="{Binding SelectedGroup}"
+                 AutomationProperties.Name="Chapters">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="data:StoryGroup">
+              <StackPanel Spacing="1">
+                <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" />
+                <TextBlock Classes="muted" FontSize="12" Text="{Binding Entries.Count, StringFormat='{}{0} stories'}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <!-- Stories in the chapter -->
+      <ListBox Grid.Column="1" Classes="picker" ItemsSource="{Binding SelectedGroup.Entries}" SelectedItem="{Binding SelectedEntry}"
+               BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0" AutomationProperties.Name="Stories">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="data:StoryEntry">
+            <StackPanel Spacing="1">
+              <TextBlock Text="{Binding Title}" TextWrapping="Wrap" />
+              <TextBlock Classes="data muted" FontSize="12" Text="{Binding StoryId}" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+
+      <!-- Reader -->
+      <ScrollViewer Grid.Column="2">
+        <StackPanel Margin="48,36" MaxWidth="760" HorizontalAlignment="Left" Spacing="18">
+          <TextBlock Text="{Binding SelectedEntry.Title}" FontFamily="{DynamicResource DisplayFont}" FontSize="34"
+                     FontWeight="{DynamicResource ShipNameWeight}" FontStyle="{DynamicResource ShipNameStyle}" TextWrapping="Wrap" />
+          <TextBlock Classes="muted" Text="{Binding SelectedEntry.Unlock}" TextWrapping="Wrap" />
+          <TextBlock Classes="muted" Text="{Binding ReaderMessage}" TextWrapping="Wrap"
+                     IsVisible="{Binding ReaderMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <ItemsControl ItemsSource="{Binding Lines}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ReaderLine">
+                <StackPanel Margin="0,0,0,16" Spacing="4">
+                  <TextBlock Classes="data muted" FontSize="12" IsVisible="{Binding NewScene}"
+                             Text="{Binding Line.Background, StringFormat='scene: {0}'}" Margin="0,8,0,4" />
+                  <TextBlock IsVisible="{Binding IsTitle}" Text="{Binding Line.Text}" FontFamily="{DynamicResource DisplayFont}"
+                             FontSize="24" TextWrapping="Wrap" TextAlignment="Center" Margin="0,12" />
+                  <TextBlock IsVisible="{Binding HasSpeaker}" Text="{Binding Line.Speaker}" Classes="accent" />
+                  <TextBlock IsVisible="{Binding IsDialogue}" Text="{Binding Line.Text}" TextWrapping="Wrap" FontSize="16"
+                             LineHeight="26" />
+                  <ItemsControl IsVisible="{Binding IsChoice}" ItemsSource="{Binding Line.Options}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" Padding="14,8" Margin="0,0,0,6">
+                          <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Panel>
+</UserControl>

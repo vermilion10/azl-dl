@@ -173,6 +173,39 @@ public class StyleTests
         window.Close();
     }
 
+    // The reader shows a known story with its resolved speakers and choices.
+    [AvaloniaFact]
+    public async Task Story_reader_shows_a_story()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.RegistryBook, Theme = ThemeMode.Light, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is StoryViewModel);
+        await main.Story.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(main.Story.IsReady, main.Story.Message);
+
+        // "Get It While It's Hot" (HAIDAORICHANG15, chapter Uncharted Summer): 45 lines of dialogue and one choice.
+        main.Story.SelectedCategory = "Special";
+        main.Story.Filter = "Get It While It's Hot";
+        Dispatcher.UIThread.RunJobs();
+        main.Story.SelectedEntry = main.Story.SelectedGroup!.Entries.Single(e => e.StoryId == "haidaorichang15");
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(45, main.Story.Lines.Count(l => l.IsDialogue));
+        Assert.Single(main.Story.Lines, l => l.IsChoice);
+        Assert.Contains(main.Story.Lines, l => l.Line.Speaker == "Eugen");
+        Assert.DoesNotContain(main.Story.Lines, l => l.Line.Text.Contains("{namecode", StringComparison.Ordinal));
+        SaveFrame(window, "story-RegistryBook-Light.png");
+        window.Close();
+    }
+
     private static void SaveFrame(Window window, string name)
     {
 #pragma warning disable CS0618 // The replacement overload needs an encoder options type this version doesn't expose.
