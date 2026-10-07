@@ -5,6 +5,11 @@ namespace AzlDl.Core.Data;
 
 public sealed record StatValue(string Label, string Value);
 
+// Description has its $n placeholders filled with the level 1 and max level values ("40.0% → 70.0%").
+public sealed record SkillInfo(string Name, string Description, int MaxLevel);
+
+public sealed record VoiceLine(string Label, string Text);
+
 // Number is the skin's 1-based position in the ship's skin list.
 public sealed record SkinInfo(long Id, string Name, string Painting, int Number);
 
@@ -20,6 +25,7 @@ public sealed record ShipInfo(
     int Rarity,
     string RarityName,
     IReadOnlyList<StatValue> Stats,
+    IReadOnlyList<SkillInfo> Skills,
     IReadOnlyList<SkinInfo> Skins);
 
 // Reads the JSON tables written by the config and sharecfg commands and joins them into ships.
@@ -46,15 +52,24 @@ public sealed class ShipCatalog
     // attrs index 6 is armor, which the game shows as an armor type rather than a number.
     private const int ArmorAttributeIndex = 6;
 
+    private readonly JsonObject words;
+    private readonly IReadOnlyList<(string Key, string Label)> voiceKeys;
+
     public IReadOnlyList<ShipInfo> Ships { get; }
 
-    private ShipCatalog(IReadOnlyList<ShipInfo> ships) => Ships = ships;
+    private ShipCatalog(IReadOnlyList<ShipInfo> ships, JsonObject words, IReadOnlyList<(string Key, string Label)> voiceKeys)
+    {
+        Ships = ships;
+        this.words = words;
+        this.voiceKeys = voiceKeys;
+    }
 
     // The tables the catalog needs, relative to the data folder.
     public static IReadOnlyList<string> RequiredFiles { get; } =
     [
         "config/ship_data_statistics.json", "config/ship_data_template.json", "config/ship_skin_template.json",
-        "config/gametip.json", "sharecfg/ship_data_by_type.json", "sharecfg/attribute_info_by_type.json",
+        "config/gametip.json", "config/ship_skin_words.json", "sharecfg/ship_data_by_type.json",
+        "sharecfg/attribute_info_by_type.json", "sharecfg/skill_data_template.json", "sharecfg/character_voice.json",
     ];
 
     public static IReadOnlyList<string> MissingFiles(string dataFolder) =>
@@ -72,6 +87,16 @@ public sealed class ShipCatalog
         var tips = Read("config/gametip.json");
         var types = Read("sharecfg/ship_data_by_type.json");
         var attributes = Read("sharecfg/attribute_info_by_type.json");
+        var skills = Read("sharecfg/skill_data_template.json");
+        var words = Read("config/ship_skin_words.json");
+        var voices = Read("sharecfg/character_voice.json");
+
+        // Voice line keys in the order the game's profile screen lists them, with its labels.
+        var voiceKeys = voices.Select(p => p.Value).OfType<JsonObject>()
+            .Where(v => v["key"] is not null && v["voice_name"] is not null)
+            .OrderBy(v => v["profile_index"] is null ? int.MaxValue : Long(v["profile_index"]))
+            .Select(v => (Text(v["key"]), Text(v["voice_name"])))
+            .ToList();
 
         string Tip(string key) => tips[key]?["tip"]?.GetValue<string>().Trim() ?? key;
 
@@ -129,6 +154,16 @@ public sealed class ShipCatalog
                 }
             }
 
+            var skillList = new List<SkillInfo>();
+            foreach (var skillId in templates[id.ToString()]?["buff_list_display"] as JsonArray ?? [])
+            {
+                if (skills[Long(skillId).ToString()] is JsonObject skill)
+                {
+                    skillList.Add(new SkillInfo(Text(skill["name"]), SkillText(skill),
+                        skill["max_level"] is null ? 1 : (int)Long(skill["max_level"])));
+                }
+            }
+
             ships.Add(new ShipInfo(
                 group,
                 id,
@@ -139,10 +174,57 @@ public sealed class ShipCatalog
                 rarity,
                 Tip($"index_rare{rarity}"),
                 values,
+                skillList,
                 skinsByGroup.GetValueOrDefault(group) ?? []));
         }
 
-        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList());
+        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys);
+    }
+
+    // A skin's voice lines. Skins only store the lines they change; the rest come from the ship's default skin, as
+    // in the game. Idle lines are one '|'-separated "main" entry, listed as Main screen 1, 2, ...
+    public IReadOnlyList<VoiceLine> VoiceLines(ShipInfo ship, SkinInfo skin)
+    {
+        var own = words[skin.Id.ToString()] as JsonObject;
+        var fallback = ship.Skins.Count > 0 ? words[ship.Skins[0].Id.ToString()] as JsonObject : null;
+
+        string Line(string key) =>
+            (own?[key] is { } a && Text(a).Length > 0 ? Text(a) : null) ?? (fallback?[key] is { } b ? Text(b) : "");
+
+        var mains = Line("main").Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var lines = new List<VoiceLine>();
+        foreach (var (key, label) in voiceKeys)
+        {
+            var text = key.StartsWith("main", StringComparison.Ordinal) && int.TryParse(key.AsSpan(4), out var n)
+                ? (n <= mains.Length ? mains[n - 1] : "")
+                : Line(key);
+            if (text.Trim().Length > 0)
+            {
+                lines.Add(new VoiceLine(label, text.Trim()));
+            }
+        }
+
+        return lines;
+    }
+
+    // "$1 chance" with desc_get_add [["40.0%", "70.0%"]] becomes "40.0% → 70.0% chance" (level 1 → max level).
+    private static string SkillText(JsonObject skill)
+    {
+        var text = Text(skill["desc"]);
+        if (skill["desc_get_add"] is JsonArray values)
+        {
+            for (var i = values.Count; i >= 1; i--)
+            {
+                if (values[i - 1] is JsonArray range && range.Count > 0)
+                {
+                    var first = Text(range[0]);
+                    var last = Text(range[^1]);
+                    text = text.Replace($"${i}", first == last ? first : $"{first} → {last}");
+                }
+            }
+        }
+
+        return text;
     }
 
     private static long Long(JsonNode? node) => node!.GetValueKind() == JsonValueKind.Number

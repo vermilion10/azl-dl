@@ -78,6 +78,22 @@ public class StyleTests
             Dispatcher.UIThread.RunJobs();
         }
 
+        if (main.Ships.SelectedShip.Name == "Enterprise")
+        {
+            Assert.Contains(main.Ships.SelectedShip.Skills, s => s.Name == "Lucky E" && s.Description.Contains("40.0% → 70.0%"));
+            Assert.Contains(main.Ships.VoiceLines, v => v.Label == "Log in");
+            Assert.Contains(main.Ships.VoiceLines, v => v.Label == "Main screen 1");
+        }
+
+        if (style == AppStyle.ChartRoom && theme == ThemeMode.Light)
+        {
+            window.Height = 2800;
+            Dispatcher.UIThread.RunJobs();
+            SaveFrame(window, "ships-tall-ChartRoom-Light.png");
+            window.Height = 880;
+            Dispatcher.UIThread.RunJobs();
+        }
+
         var frame = window.CaptureRenderedFrame();
         Assert.NotNull(frame);
         var output = Path.Combine(OutputFolder(), $"ships-{style}-{theme}.png");

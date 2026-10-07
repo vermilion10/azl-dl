@@ -77,6 +77,21 @@
             </StackPanel>
 
             <StackPanel>
+              <TextBlock Classes="heading" Text="Skills" />
+              <ItemsControl ItemsSource="{Binding SelectedShip.Skills}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="data:SkillInfo">
+                    <StackPanel Spacing="4" Margin="0,0,0,16">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Description}" TextWrapping="Wrap" LineHeight="22" />
+                      <TextBlock Classes="muted" FontSize="12" Text="{Binding MaxLevel, StringFormat='Values at level 1 → level {0}'}" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel>
               <TextBlock Classes="heading" Text="Skins" />
               <ListBox Classes="picker" ItemsSource="{Binding SelectedShip.Skins}" SelectedItem="{Binding SelectedSkin}"
                        AutomationProperties.Name="Skins">
@@ -92,6 +107,20 @@
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
+            </StackPanel>
+
+            <StackPanel>
+              <TextBlock Classes="heading" Text="{Binding SelectedSkin.Name, StringFormat='Voice lines: {0}'}" />
+              <ItemsControl ItemsSource="{Binding VoiceLines}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="data:VoiceLine">
+                    <StackPanel Spacing="2" Margin="0,0,0,12">
+                      <TextBlock Classes="muted" FontSize="12" Text="{Binding Label}" />
+                      <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </StackPanel>
           </StackPanel>
         </controls:ChamferBorder>

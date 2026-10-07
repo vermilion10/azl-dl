@@ -31,6 +31,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
 
     private IReadOnlyList<ShipInfo> all = [];
+    private ShipCatalog? catalog;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem))]
@@ -72,6 +73,9 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     public ObservableCollection<ShipInfo> Ships { get; } = [];
 
+    // The selected skin's voice lines (its own, with the default skin's for the rest).
+    public ObservableCollection<VoiceLine> VoiceLines { get; } = [];
+
     public string DataFolder => settings.DataFolder;
 
     // Set by the shell; shows the Sync section.
@@ -100,7 +104,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
         try
         {
-            var catalog = await Task.Run(() => ShipCatalog.Load(folder));
+            catalog = await Task.Run(() => ShipCatalog.Load(folder));
             all = catalog.Ships;
             ApplyFilter();
             SelectedShip = Ships.FirstOrDefault(s => s.EnglishName.Contains("Enterprise", StringComparison.Ordinal)) ?? Ships.FirstOrDefault();
@@ -157,6 +161,15 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     private void ShowPainting(SkinInfo? skin)
     {
+        VoiceLines.Clear();
+        if (skin is not null && SelectedShip is { } ship && catalog is not null)
+        {
+            foreach (var line in catalog.VoiceLines(ship, skin))
+            {
+                VoiceLines.Add(line);
+            }
+        }
+
         Painting = null;
         if (skin is null)
         {
