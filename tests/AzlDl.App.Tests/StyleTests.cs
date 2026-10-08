@@ -258,6 +258,61 @@ public class StyleTests
         Assert.Equal(System.Net.HttpStatusCode.NotFound, escape.StatusCode);
     }
 
+    // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.
+    [AvaloniaFact]
+    public async Task Asset_browser_previews_and_saves()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.ChartRoom, Theme = ThemeMode.Dark, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is AssetsViewModel);
+        var assets = main.Assets;
+        await WaitUntil(() => assets.IsReady || assets.HasProblem);
+        Assert.True(assets.IsReady, assets.Message);
+
+        assets.SelectedFolder = assets.Folders.Single(f => f.Name == "painting");
+        assets.Filter = "qiye_5_tex";
+        Dispatcher.UIThread.RunJobs();
+        assets.SelectedBundle = assets.Bundles.Single();
+        await WaitUntil(() => assets.ShowsImage);
+        Assert.Equal("Texture2D", assets.SelectedAsset!.Type);
+        Assert.NotNull(assets.PreviewImage);
+        Dispatcher.UIThread.RunJobs();
+        SaveFrame(window, "assets-ChartRoom-Dark.png");
+
+        var target = Path.Combine(OutputFolder(), assets.SuggestedFileName);
+        await assets.SaveAssetCommand.ExecuteAsync(target);
+        Assert.True(new FileInfo(target).Length > 0, assets.ActionMessage);
+
+        assets.SelectedFolder = assets.Folders.Single(f => f.Name == "(top level)");
+        assets.Filter = "scripts64";
+        Dispatcher.UIThread.RunJobs();
+        assets.SelectedBundle = assets.Bundles.Single();
+        await WaitUntil(() => assets.Assets.Count > 0 || assets.BundleMessage.StartsWith("Couldn't", StringComparison.Ordinal));
+        Assert.Contains(assets.Assets, a => a.Type == "TextAsset");
+        Assert.False(assets.ExtractBundleCommand.CanExecute(null));
+
+        assets.SelectedAsset = assets.Assets.First(a => a.Type == "TextAsset");
+        await WaitUntil(() => assets.Preview is not null || assets.PreviewMessage.StartsWith("Couldn't", StringComparison.Ordinal));
+        Assert.NotNull(assets.Preview);
+        window.Close();
+    }
+
+    private static async Task WaitUntil(Func<bool> done)
+    {
+        for (var i = 0; i < 600 && !done(); i++)
+        {
+            await Task.Delay(50);
+            Dispatcher.UIThread.RunJobs();
+        }
+    }
+
     private static void SaveFrame(Window window, string name)
     {
 #pragma warning disable CS0618 // The replacement overload needs an encoder options type this version doesn't expose.

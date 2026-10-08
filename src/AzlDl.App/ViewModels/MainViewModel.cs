@@ -10,11 +10,13 @@ public sealed record Section(string Title, ObservableObject Page);
 public sealed partial class MainViewModel : ObservableObject
 {
     private bool storyLoaded;
+    private bool assetsLoaded;
 
     public MainViewModel(Application app, AppSettings settings)
     {
         Ships = new ShipsViewModel(settings);
         Story = new StoryViewModel(settings);
+        Assets = new AssetsViewModel(settings);
         Sync = new SyncViewModel(settings, ReloadDataAsync);
         SettingsPage = new SettingsViewModel(app, settings, async () =>
         {
@@ -23,15 +25,18 @@ public sealed partial class MainViewModel : ObservableObject
         });
 
         var sync = new Section("Sync", Sync);
-        Sections = [new Section("Ships", Ships), new Section("Story", Story), sync, new Section("Settings", SettingsPage)];
+        Sections = [new Section("Ships", Ships), new Section("Story", Story), new Section("Assets", Assets), sync, new Section("Settings", SettingsPage)];
         selectedSection = Sections[0];
         Ships.OpenSync = () => SelectedSection = sync;
         Story.OpenSync = () => SelectedSection = sync;
+        Assets.OpenSync = () => SelectedSection = sync;
     }
 
     public ShipsViewModel Ships { get; }
 
     public StoryViewModel Story { get; }
+
+    public AssetsViewModel Assets { get; }
 
     public SyncViewModel Sync { get; }
 
@@ -42,13 +47,19 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private Section selectedSection;
 
-    // The story archive takes a moment to read, so it loads the first time it's opened.
+    // The story archive takes a moment to read, so it loads the first time it's opened. The asset list is read again
+    // on every visit, since ship pages and Sync add bundles in the meantime.
     partial void OnSelectedSectionChanged(Section value)
     {
         if (value.Page == Story && !storyLoaded)
         {
             storyLoaded = true;
             _ = Story.LoadAsync();
+        }
+        else if (value.Page == Assets)
+        {
+            assetsLoaded = true;
+            _ = Assets.LoadAsync();
         }
     }
 
@@ -58,6 +69,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (storyLoaded)
         {
             await Story.LoadAsync();
+        }
+
+        if (assetsLoaded)
+        {
+            await Assets.LoadAsync();
         }
     }
 }

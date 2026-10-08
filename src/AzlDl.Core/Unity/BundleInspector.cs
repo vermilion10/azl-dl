@@ -1,5 +1,6 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AzlDl.Core.Scripts;
 
 namespace AzlDl.Core.Unity;
 
@@ -7,7 +8,8 @@ public sealed record InspectedAsset(string File, long PathId, string Type, strin
 
 public sealed record BundleReport(string UnityVersion, IReadOnlyList<string> Files, IReadOnlyList<InspectedAsset> Assets);
 
-// Opens a UnityFS bundle and lists every object in its serialized files, by type and m_Name.
+// Opens a UnityFS bundle and lists every object in its serialized files, by type and m_Name. Encrypted scripts bundles
+// are decrypted in memory first.
 public static class BundleInspector
 {
     private static readonly byte[] Signature = "UnityFS"u8.ToArray();
@@ -21,12 +23,41 @@ public static class BundleInspector
 
     public static bool IsUnityFsBytes(ReadOnlySpan<byte> data) => data.StartsWith(Signature);
 
+    // True for a file the inspector can open: a plain bundle or an encrypted scripts bundle.
+    public static bool CanOpen(string path)
+    {
+        if (IsUnityFs(path))
+        {
+            return true;
+        }
+
+        Span<byte> head = stackalloc byte[16];
+        using var stream = File.OpenRead(path);
+        return stream.Read(head) == head.Length && ScriptBundleCipher.LooksEncrypted(head);
+    }
+
+    internal static BundleFileInstance Open(AssetsManager manager, string path)
+    {
+        if (IsUnityFs(path))
+        {
+            return manager.LoadBundleFile(path, unpackIfPacked: true);
+        }
+
+        var data = File.ReadAllBytes(path);
+        if (!ScriptBundleCipher.LooksEncrypted(data))
+        {
+            throw new InvalidDataException("Not a Unity bundle.");
+        }
+
+        return manager.LoadBundleFile(new MemoryStream(ScriptBundleCipher.Decrypt(data)), path, unpackIfPacked: true);
+    }
+
     public static BundleReport Inspect(string path)
     {
         var manager = new AssetsManager();
         try
         {
-            var bundle = manager.LoadBundleFile(path, unpackIfPacked: true);
+            var bundle = Open(manager, path);
             var files = new List<string>();
             var assets = new List<InspectedAsset>();
 
@@ -75,7 +106,7 @@ public static class BundleInspector
         var manager = new AssetsManager();
         try
         {
-            var bundle = manager.LoadBundleFile(path, unpackIfPacked: true);
+            var bundle = Open(manager, path);
             var matched = 0;
             for (var index = 0; index < bundle.file.BlockAndDirInfo.DirectoryInfos.Count; index++)
             {

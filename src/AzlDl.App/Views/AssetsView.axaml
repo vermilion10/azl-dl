@@ -1,0 +1,102 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:unity="using:AzlDl.Core.Unity"
+             x:Class="AzlDl.App.Views.AssetsView"
+             x:DataType="vm:AssetsViewModel">
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="There are no bundles to browse" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="300,340,*">
+      <!-- Bundles on disk, one folder at a time -->
+      <DockPanel Background="{DynamicResource SurfaceBrush}">
+        <ComboBox DockPanel.Dock="Top" Margin="16,16,16,8" HorizontalAlignment="Stretch" ItemsSource="{Binding Folders}"
+                  SelectedItem="{Binding SelectedFolder}" AutomationProperties.Name="Bundle folder" />
+        <TextBox DockPanel.Dock="Top" Margin="16,0,16,8" PlaceholderText="Search bundles" Text="{Binding Filter}"
+                 AutomationProperties.Name="Search bundles" />
+        <TextBlock DockPanel.Dock="Bottom" Classes="muted data" Margin="16,8" FontSize="12"
+                   Text="{Binding BundleCountText}" />
+        <ListBox Classes="picker" ItemsSource="{Binding Bundles}" SelectedItem="{Binding SelectedBundle}"
+                 AutomationProperties.Name="Bundles">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:BundleEntry">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Classes="data muted" FontSize="12" Text="{Binding SizeText}"
+                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                <TextBlock Classes="data" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <!-- Objects in the bundle -->
+      <DockPanel Grid.Column="1">
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="16,18,16,14">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="data" Text="{Binding SelectedBundle.Path}" FontWeight="Medium" TextWrapping="Wrap" />
+            <TextBlock Classes="muted" FontSize="13" Text="{Binding BundleMessage}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <ListBox Classes="picker" ItemsSource="{Binding Assets}" SelectedItem="{Binding SelectedAsset}"
+                 BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0" AutomationProperties.Name="Objects">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="unity:InspectedAsset">
+              <StackPanel Spacing="1">
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="data muted" FontSize="12" Text="{Binding Type}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <!-- Preview and export -->
+      <DockPanel Grid.Column="2" Background="{DynamicResource StageBrush}">
+        <Border DockPanel.Dock="Top" Padding="28,20,28,16">
+          <StackPanel Spacing="12">
+            <StackPanel Spacing="4">
+              <TextBlock Text="{Binding SelectedAsset.Name}" FontFamily="{DynamicResource DisplayFont}" FontSize="26"
+                         FontWeight="{DynamicResource ShipNameWeight}" FontStyle="{DynamicResource ShipNameStyle}"
+                         TextWrapping="Wrap" />
+              <TextBlock Classes="data muted" FontSize="12" IsVisible="{Binding SelectedAsset, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Run Text="{Binding SelectedAsset.Type}" /><Run Text=" · path ID " /><Run Text="{Binding SelectedAsset.PathId}" />
+              </TextBlock>
+            </StackPanel>
+            <WrapPanel>
+              <Button Classes="primary" Content="Save object…" Click="OnSaveAsset" IsEnabled="{Binding HasPreview}"
+                      Margin="0,0,12,8" ToolTip.Tip="Pictures save as PNG, text assets as their original bytes, anything else as its field values" />
+              <Button Content="Extract bundle" Command="{Binding ExtractBundleCommand}" MinHeight="44" Padding="18,10"
+                      Margin="0,0,12,8" ToolTip.Tip="Write every picture and text file in the bundle to the art folder" />
+            </WrapPanel>
+            <DockPanel IsVisible="{Binding ActionMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <Button DockPanel.Dock="Right" Content="Open folder" Click="OnOpenFolder" IsVisible="{Binding HasResultFolder}"
+                      MinHeight="36" Margin="12,0,0,0" />
+              <TextBlock Text="{Binding ActionMessage}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+          </StackPanel>
+        </Border>
+
+        <TextBlock DockPanel.Dock="Bottom" Classes="muted" Margin="28,8,28,16" Text="{Binding PreviewMessage}" TextWrapping="Wrap" />
+        <ProgressBar DockPanel.Dock="Bottom" IsIndeterminate="True" IsVisible="{Binding PreviewBusy}" Margin="28,0" />
+
+        <Panel Margin="28,0,28,8">
+          <Image Source="{Binding PreviewImage}" IsVisible="{Binding ShowsImage}" Stretch="Uniform" StretchDirection="DownOnly" />
+          <Border IsVisible="{Binding ShowsText}" Background="{DynamicResource SurfaceBrush}" Padding="16">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto">
+              <SelectableTextBlock Classes="data" FontSize="13" Text="{Binding Preview.Text}" />
+            </ScrollViewer>
+          </Border>
+        </Panel>
+      </DockPanel>
+    </Grid>
+  </Panel>
+</UserControl>

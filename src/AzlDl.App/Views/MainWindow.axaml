@@ -13,6 +13,9 @@
     <DataTemplate DataType="vm:StoryViewModel">
       <views:StoryView />
     </DataTemplate>
+    <DataTemplate DataType="vm:AssetsViewModel">
+      <views:AssetsView />
+    </DataTemplate>
     <DataTemplate DataType="vm:SyncViewModel">
       <views:SyncView />
     </DataTemplate>
