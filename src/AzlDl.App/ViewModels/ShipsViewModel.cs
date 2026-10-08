@@ -24,6 +24,7 @@ public enum StageMode
 {
     Painting,
     Chibi,
+    Dynamic,
     Live2D,
 }
 
@@ -59,6 +60,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     [
         new(StageMode.Painting, "Painting"),
         new(StageMode.Chibi, "Chibi"),
+        new(StageMode.Dynamic, "Dynamic"),
         new(StageMode.Live2D, "Live2D"),
     ];
 
@@ -221,7 +223,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         }
     }
 
-    // Loads the chibi or Live2D model for the selected skin into the viewer page, downloading it if needed.
+    // Loads the chibi, dynamic skin or Live2D model for the selected skin into the viewer page, downloading it if needed.
     private async Task ShowViewerAsync()
     {
         if (ShowsPainting || SelectedSkin is not { } skin)
@@ -238,13 +240,21 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         }
 
         ViewerState = ViewerState.Loading;
-        ViewerMessage = mode == StageMode.Chibi ? $"Getting the chibi for {skin.Name}…" : $"Getting the Live2D model for {skin.Name}…";
-        var (category, bundle) = mode == StageMode.Chibi
-            ? (AssetCategory.Azl, $"char/{skin.Painting}")
-            : (AssetCategory.Live2D, $"live2d/{skin.Painting}");
+        var (what, bundle) = mode switch
+        {
+            StageMode.Chibi => ("chibi", $"char/{skin.Painting}"),
+            StageMode.Dynamic => ("dynamic skin", $"{DynamicSkinReader.Folder}{skin.Painting}"),
+            _ => ("Live2D model", $"live2d/{skin.Painting}"),
+        };
+        ViewerMessage = $"Getting the {what} for {skin.Name}…";
         try
         {
-            var folder = await Task.Run(() => Fetcher().FetchBundleAsync(category, bundle));
+            var folder = await Task.Run(() => mode switch
+            {
+                StageMode.Chibi => Fetcher().FetchBundleAsync(AssetCategory.Azl, bundle),
+                StageMode.Dynamic => Fetcher().FetchDynamicSkinAsync(skin.Painting),
+                _ => Fetcher().FetchBundleAsync(AssetCategory.Live2D, bundle),
+            });
             if (SelectedSkin != skin || SelectedStage?.Mode != mode)
             {
                 return;
@@ -253,13 +263,16 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             if (folder is null)
             {
                 ViewerState = ViewerState.Unavailable;
-                ViewerMessage = mode == StageMode.Chibi ? $"{skin.Name} has no chibi." : $"{skin.Name} has no Live2D model.";
+                ViewerMessage = $"{skin.Name} has no {what}.";
                 return;
             }
 
-            var query = mode == StageMode.Chibi
-                ? $"kind=spine&skel=/art/{bundle}/{skin.Painting}.skel&atlas=/art/{bundle}/{skin.Painting}.atlas"
-                : $"kind=live2d&model=/art/{bundle}/{skin.Painting}.model3.json";
+            var query = mode switch
+            {
+                StageMode.Chibi => $"kind=spine&skel=/art/{bundle}/{skin.Painting}.skel&atlas=/art/{bundle}/{skin.Painting}.atlas",
+                StageMode.Dynamic => $"kind=layers&layout=/art/{bundle}/{DynamicSkinReader.LayoutFileName}",
+                _ => $"kind=live2d&model=/art/{bundle}/{skin.Painting}.model3.json",
+            };
             ViewerUrl = Server().UrlFor($"/viewer.html?{query}&{ThemeColors()}");
             ViewerState = ViewerState.Ready;
         }

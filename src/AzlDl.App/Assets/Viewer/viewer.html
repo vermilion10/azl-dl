@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>azl-dl viewer</title>
 <!-- Plays a Spine rig (chibis, dynamic skins) or a Live2D model from the local data folder.
-     Query: kind=spine&skel=…&atlas=…  or  kind=live2d&model=…  plus bg, ink and muted colors (hex, no #).
+     Query: kind=spine&skel=…&atlas=…, kind=layers&layout=… (a dynamic skin's layers.json) or kind=live2d&model=…,
+     plus bg, ink and muted colors (hex, no #).
      The runtimes are not part of azl-dl; the app downloads them into <data>/runtimes on first use. -->
 <style>
   :root { --bg: #e2e9ee; --ink: #14263a; --muted: #475a6c; }
@@ -67,16 +68,107 @@
       backgroundColor: "#00000000",
       success: (p) => {
         message.hidden = true;
-        const names = p.skeleton.data.animations.map((a) => a.name);
-        const select = document.getElementById("animation");
-        for (const name of names) select.add(new Option(name, name));
-        const idle = names.find((n) => n === "normal" || n === "stand") || names[0];
-        if (idle) { select.value = idle; p.setAnimation(idle, true); }
-        select.onchange = () => p.setAnimation(select.value, true);
-        document.getElementById("bar").hidden = names.length < 2;
+        const play = (name) => p.setAnimation(name, true);
+        const idle = picker(p.skeleton.data.animations.map((a) => a.name), "", play);
+        if (idle) play(idle);
       },
       error: (_, reason) => fail("The rig couldn't be shown: " + reason),
     });
+  }
+
+  // Fills the animation picker; returns the starting animation.
+  function picker(names, preferred, play) {
+    const select = document.getElementById("animation");
+    for (const name of names) select.add(new Option(name, name));
+    const idle = names.includes(preferred) ? preferred : names.find((n) => n === "normal" || n === "stand") || names[0];
+    select.value = idle;
+    select.onchange = () => play(select.value);
+    document.getElementById("bar").hidden = names.length < 2;
+    return idle;
+  }
+
+  // A dynamic skin: one or more skeletons drawn back to front, each placed and scaled as the game's prefab does.
+  async function showLayers() {
+    await load("/runtimes/spine-player.js");
+    const response = await fetch(query.get("layout"));
+    if (!response.ok) throw new Error("The layer list couldn't be loaded.");
+    const layout = await response.json();
+
+    const canvas = document.createElement("canvas");
+    canvas.style.width = canvas.style.height = "100%";
+    document.getElementById("stage").appendChild(canvas);
+    const context = new spine.webgl.ManagedWebGLRenderingContext(canvas, { alpha: true, premultipliedAlpha: false });
+    const renderer = new spine.webgl.SceneRenderer(canvas, context);
+    const assets = new spine.webgl.AssetManager(context, "/art/");
+    for (const layer of layout) {
+      assets.loadBinary(layer.skeleton);
+      assets.loadTextureAtlas(layer.atlas);
+    }
+
+    await new Promise((resolve, reject) => {
+      const wait = () => assets.hasErrors() ? reject(new Error("Couldn't load " + Object.keys(assets.getErrors()).join(", ")))
+        : assets.isLoadingComplete() ? resolve() : setTimeout(wait, 30);
+      wait();
+    });
+
+    const layers = layout.map((layer) => {
+      const binary = new spine.SkeletonBinary(new spine.AtlasAttachmentLoader(assets.get(layer.atlas)));
+      binary.scale = layer.scale;
+      const data = binary.readSkeletonData(assets.get(layer.skeleton));
+      const skeleton = new spine.Skeleton(data);
+      skeleton.x = layer.x;
+      skeleton.y = layer.y;
+      return { skeleton, state: new spine.AnimationState(new spine.AnimationStateData(data)) };
+    });
+
+    const play = (name) => {
+      for (const { skeleton, state } of layers) {
+        if (skeleton.data.findAnimation(name)) state.setAnimation(0, name, true);
+        else state.clearTracks();
+        skeleton.setToSetupPose();
+      }
+    };
+    const names = [...new Set(layers.flatMap((l) => l.skeleton.data.animations.map((a) => a.name)))];
+    play(picker(names, layout[0].animation, play));
+
+    // Frame the union of the layers' bounds in the setup pose.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const { skeleton, state } of layers) {
+      state.apply(skeleton);
+      skeleton.updateWorldTransform();
+      const offset = new spine.Vector2(), size = new spine.Vector2();
+      skeleton.getBounds(offset, size, []);
+      minX = Math.min(minX, offset.x); minY = Math.min(minY, offset.y);
+      maxX = Math.max(maxX, offset.x + size.x); maxY = Math.max(maxY, offset.y + size.y);
+    }
+
+    const drawFrame = (delta) => {
+      renderer.resize(spine.webgl.ResizeMode.Expand);
+      const camera = renderer.camera;
+      camera.position.x = (minX + maxX) / 2;
+      camera.position.y = (minY + maxY) / 2;
+      camera.zoom = Math.max((maxX - minX) / canvas.width, (maxY - minY) / canvas.height) * 1.05;
+      context.gl.clearColor(0, 0, 0, 0);
+      context.gl.clear(context.gl.COLOR_BUFFER_BIT);
+      renderer.begin();
+      for (const { skeleton, state } of layers) {
+        state.update(delta);
+        state.apply(skeleton);
+        skeleton.updateWorldTransform();
+        renderer.drawSkeleton(skeleton, false);
+      }
+      renderer.end();
+    };
+
+    let last = performance.now();
+    const frame = (now) => {
+      drawFrame(Math.min((now - last) / 1000, 0.1));
+      last = now;
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    window.viewer = { layers, drawFrame };
+    message.hidden = true;
   }
 
   async function showLive2D() {
@@ -102,7 +194,8 @@
   }
 
   const kind = query.get("kind");
-  (kind === "spine" ? showSpine() : kind === "live2d" ? showLive2D() : Promise.reject(new Error("Nothing to show.")))
+  const show = { spine: showSpine, layers: showLayers, live2d: showLive2D }[kind];
+  (show ? show() : Promise.reject(new Error("Nothing to show.")))
     .catch((e) => fail(e.message));
 </script>
 </body>

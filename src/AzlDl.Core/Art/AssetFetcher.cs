@@ -47,16 +47,49 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         return found.Count == 0 ? null : folder;
     }
 
-    private async Task<IReadOnlyList<HashRow>> FetchAsync(AssetCategory category, IReadOnlyCollection<string> paths,
-        CancellationToken cancellationToken)
+    // Returns the folder holding layers.json, or null when the skin isn't dynamic. Downloads the prefab and the first
+    // resource bundle the game has for it (spinepainting/<name>_res, or a shorter name's for variants).
+    public async Task<string?> FetchDynamicSkinAsync(string painting, CancellationToken cancellationToken = default)
+    {
+        var prefab = DynamicSkinReader.Folder + painting;
+        var folder = FolderFor(prefab);
+        if (File.Exists(Path.Combine(folder, DynamicSkinReader.LayoutFileName)))
+        {
+            return folder;
+        }
+
+        var found = await FetchAsync(AssetCategory.Azl, rows =>
+        {
+            var paths = rows.Select(r => r.Path).ToHashSet(StringComparer.Ordinal);
+            var resources = DynamicSkinReader.ResourceCandidates(prefab).FirstOrDefault(paths.Contains);
+            return paths.Contains(prefab) && resources is not null ? [prefab, resources] : [];
+        }, cancellationToken);
+
+        if (found.Count == 0)
+        {
+            return null;
+        }
+
+        return File.Exists(Path.Combine(folder, DynamicSkinReader.LayoutFileName))
+            ? folder
+            : throw new InvalidDataException($"{prefab} has no skeletons to show.");
+    }
+
+    private Task<IReadOnlyList<HashRow>> FetchAsync(AssetCategory category, IReadOnlyCollection<string> paths,
+        CancellationToken cancellationToken) =>
+        FetchAsync(category, _ => paths, cancellationToken);
+
+    private async Task<IReadOnlyList<HashRow>> FetchAsync(AssetCategory category,
+        Func<IReadOnlyList<HashRow>, IReadOnlyCollection<string>> choose, CancellationToken cancellationToken)
     {
         var reply = await GateClient.QueryVersionsAsync(region, cancellationToken: cancellationToken);
         var version = reply.Versions.Select(AssetVersion.TryParse).FirstOrDefault(v => v?.Category == category)
                       ?? throw new InvalidDataException($"The gate didn't report a {category} version.");
 
         var cdn = new CdnClient(http, region, Path.Combine(dataFolder, "cache"));
-        var wanted = new HashSet<string>(paths, StringComparer.Ordinal);
-        var rows = (await cdn.GetHashListAsync(version, cancellationToken)).Where(r => wanted.Contains(r.Path)).ToList();
+        var all = await cdn.GetHashListAsync(version, cancellationToken);
+        var wanted = new HashSet<string>(choose(all), StringComparer.Ordinal);
+        var rows = all.Where(r => wanted.Contains(r.Path)).ToList();
         if (rows.Count == 0)
         {
             return rows;

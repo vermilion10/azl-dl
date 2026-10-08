@@ -258,6 +258,45 @@ public class StyleTests
         Assert.Equal(System.Net.HttpStatusCode.NotFound, escape.StatusCode);
     }
 
+    // A dynamic skin is served as a layer list placing its skeletons; New Jersey's xinzexi_4 has a back and a front
+    // layer. A skin without one says so. Needs the runtimes, and reaches the game's servers for skins not on disk.
+    [AvaloniaFact]
+    public async Task Dynamic_skin_is_served_as_layers()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+        Assert.SkipUnless(new AzlDl.Core.Viewer.RuntimeStore(new HttpClient(), dataFolder!).IsInstalled, "Viewer runtimes aren't installed.");
+
+        var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
+        await ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedShip = ships.Ships.First(s => s.Skins.Any(k => k.Painting == "xinzexi_4"));
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip.Skins.Single(k => k.Painting == "xinzexi_4");
+        ships.SelectedStage = ships.StageOptions.Single(o => o.Mode == StageMode.Dynamic);
+        await WaitUntil(() => ships.ViewerState != ViewerState.Loading);
+        Assert.Equal(ViewerState.Ready, ships.ViewerState);
+
+        using var http = new HttpClient();
+        var page = await http.GetAsync(ships.ViewerUrl);
+        Assert.True(page.IsSuccessStatusCode);
+        var layout = System.Web.HttpUtility.ParseQueryString(ships.ViewerUrl!.Query)["layout"]!;
+        var layers = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(new Uri(ships.ViewerUrl, layout))).RootElement;
+        Assert.Equal(2, layers.GetArrayLength());
+        foreach (var layer in layers.EnumerateArray())
+        {
+            var skeleton = await http.GetAsync(new Uri(ships.ViewerUrl, "/art/" + layer.GetProperty("skeleton").GetString()));
+            Assert.True(skeleton.IsSuccessStatusCode);
+        }
+
+        ships.SelectedShip = ships.Ships.First(s => s.Skins.Any(k => k.Painting == "qiye_5"));
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip.Skins.Single(k => k.Painting == "qiye_5");
+        await WaitUntil(() => ships.ViewerState != ViewerState.Loading);
+        Assert.Equal(ViewerState.Unavailable, ships.ViewerState);
+        Assert.EndsWith("has no dynamic skin.", ships.ViewerMessage);
+    }
+
     // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.
     [AvaloniaFact]
     public async Task Asset_browser_previews_and_saves()

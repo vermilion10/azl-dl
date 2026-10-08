@@ -10,7 +10,8 @@ public sealed record ExtractSummary(int Bundles, int Images, int Paintings, int 
 // - painting/<name>_tex bundles become art/painting/<name>.png, reassembled from tiles when the painting has a mesh;
 // - every other Texture2D becomes <bundle path>/<texture name>.png;
 // - TextAssets (Spine .skel and .atlas files, for example) are written as-is under <bundle path>/;
-// - live2d/<name> bundles also get <name>.moc3 and a <name>.model3.json.
+// - live2d/<name> bundles also get <name>.moc3 and a <name>.model3.json;
+// - spinepainting/<name> prefabs become a layers.json placing the skeletons from spinepainting/<name>_res.
 public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
 {
     private const string PaintingFolder = "painting/";
@@ -89,6 +90,11 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
             if (bundlePath.StartsWith(Live2DFolder, StringComparison.Ordinal))
             {
                 files += ExtractLive2D(manager, instance, bundlePath);
+            }
+
+            if (DynamicSkinReader.IsPrefab(bundlePath))
+            {
+                files += DynamicSkinReader.WriteLayout(assetDirectory, bundlePath, outputDirectory);
             }
 
             return (images, paintings, files);
