@@ -20,18 +20,45 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     public async Task<string> FetchPaintingAsync(string painting, CancellationToken cancellationToken = default)
     {
         var target = PaintingPath(painting);
-        if (File.Exists(target))
+        if (IsPaintingCurrent(painting))
         {
             return target;
         }
 
-        var found = await FetchAsync(AssetCategory.Painting, [$"painting/{painting}", $"painting/{painting}_tex"], cancellationToken);
+        // A layered painting's prefab names its other layers, which are downloaded before the painting is extracted.
+        var found = await FetchAsync(AssetCategory.Painting, [$"painting/{painting}", $"painting/{painting}_tex"], cancellationToken,
+            extract: false);
         if (found.Count == 0)
         {
             throw new FileNotFoundException($"The game has no painting named {painting}.");
         }
 
+        var prefab = Path.Combine(AssetFolder, "painting", painting);
+        var layers = File.Exists(prefab) ? PaintingComposer.ReadLayers(prefab).Where(l => l.Name != painting).ToList() : [];
+        if (layers.Count > 0)
+        {
+            await FetchAsync(AssetCategory.Painting, layers.Select(l => ArtExtractor.LayerBundle(l.Name)).ToList(), cancellationToken,
+                extract: false);
+        }
+
+        var source = found.Any(r => r.Path == $"painting/{painting}_tex") ? $"painting/{painting}_tex" : $"painting/{painting}";
+        Extract([source]);
         return File.Exists(target) ? target : throw new FileNotFoundException($"Extracting {painting} produced no painting.");
+    }
+
+    // False when the painting isn't on disk, or was extracted before layered paintings were stacked (its prefab has
+    // layers but no layout was written next to it).
+    public bool IsPaintingCurrent(string painting)
+    {
+        var target = PaintingPath(painting);
+        if (!File.Exists(target))
+        {
+            return false;
+        }
+
+        var prefab = Path.Combine(AssetFolder, "painting", painting);
+        return File.Exists(PaintingComposer.LayoutPath(target)) || !File.Exists(prefab)
+               || PaintingComposer.ReadLayers(prefab).Count < 2;
     }
 
     // Returns the extracted folder, or null when the game has no such bundle (a skin without a Live2D model, say).
@@ -76,11 +103,11 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     }
 
     private Task<IReadOnlyList<HashRow>> FetchAsync(AssetCategory category, IReadOnlyCollection<string> paths,
-        CancellationToken cancellationToken) =>
-        FetchAsync(category, _ => paths, cancellationToken);
+        CancellationToken cancellationToken, bool extract = true) =>
+        FetchAsync(category, _ => paths, cancellationToken, extract);
 
     private async Task<IReadOnlyList<HashRow>> FetchAsync(AssetCategory category,
-        Func<IReadOnlyList<HashRow>, IReadOnlyCollection<string>> choose, CancellationToken cancellationToken)
+        Func<IReadOnlyList<HashRow>, IReadOnlyCollection<string>> choose, CancellationToken cancellationToken, bool extract = true)
     {
         var reply = await GateClient.QueryVersionsAsync(region, cancellationToken: cancellationToken);
         var version = reply.Versions.Select(AssetVersion.TryParse).FirstOrDefault(v => v?.Category == category)
@@ -101,17 +128,20 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
             throw new IOException($"{summary.Failed} of the files didn't download.");
         }
 
-        // A painting is extracted from its _tex bundle when it has one; everything else from the bundle itself.
-        var toExtract = rows.Select(r => r.Path)
-            .Where(p => !(p.StartsWith("painting/", StringComparison.Ordinal) && !p.EndsWith("_tex", StringComparison.Ordinal)
-                          && wanted.Contains(p + "_tex") && rows.Any(r => r.Path == p + "_tex")))
-            .ToList();
-        var result = new ArtExtractor(AssetFolder, ArtFolder).Extract(toExtract, 1);
+        if (extract)
+        {
+            Extract(rows.Select(r => r.Path).ToList());
+        }
+
+        return rows;
+    }
+
+    private void Extract(IReadOnlyList<string> bundlePaths)
+    {
+        var result = new ArtExtractor(AssetFolder, ArtFolder).Extract(bundlePaths, 1);
         if (result.Errors.Count > 0)
         {
             throw new InvalidDataException(result.Errors[0]);
         }
-
-        return rows;
     }
 }

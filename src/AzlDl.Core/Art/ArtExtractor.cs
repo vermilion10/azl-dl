@@ -1,13 +1,15 @@
 using System.Collections.Concurrent;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AzlDl.Core.Unity;
 
 namespace AzlDl.Core.Art;
 
 public sealed record ExtractSummary(int Bundles, int Images, int Paintings, int Files, IReadOnlyList<string> Errors);
 
 // Converts downloaded bundles into plain files under OutputDirectory:
-// - painting/<name>_tex bundles become art/painting/<name>.png, reassembled from tiles when the painting has a mesh;
+// - painting/<name>_tex bundles become art/painting/<name>.png, reassembled from tiles when the painting has a mesh,
+//   and stacked with its other layers (with a <name>.layers.json) when painting/<name> is a layered prefab;
 // - every other Texture2D becomes <bundle path>/<texture name>.png;
 // - TextAssets (Spine .skel and .atlas files, for example) are written as-is under <bundle path>/;
 // - live2d/<name> bundles also get <name>.moc3 and a <name>.model3.json;
@@ -70,7 +72,18 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
                     // Newer paintings aren't tiled: there is no mesh and the texture is already the whole image.
                     var mesh = FindMesh(manager, instance, bundlePath, name + MeshSuffix);
                     var painting = mesh is null ? image : PaintingReconstructor.Rebuild(image, mesh);
-                    painting.WritePng(Target("painting", name + ".png"));
+                    var target = Target("painting", name + ".png");
+                    var layered = ComposeLayers(name, painting);
+                    (layered?.Image ?? painting).WritePng(target);
+                    if (layered is not null)
+                    {
+                        PaintingComposer.WriteLayout(PaintingComposer.LayoutPath(target), layered.Value.Layers);
+                    }
+                    else if (File.Exists(PaintingComposer.LayoutPath(target)))
+                    {
+                        File.Delete(PaintingComposer.LayoutPath(target));
+                    }
+
                     paintings++;
                 }
                 else
@@ -98,6 +111,53 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
             }
 
             return (images, paintings, files);
+        }
+        finally
+        {
+            manager.UnloadAll(true);
+        }
+    }
+
+    // Returns the stacked painting when painting/<name> is a layered prefab whose layers are all downloaded, else null.
+    private (RgbaImage Image, IReadOnlyList<PaintingLayer> Layers)? ComposeLayers(string name, RgbaImage own)
+    {
+        var prefab = Path.Combine(assetDirectory, PaintingFolder + name);
+        if (!File.Exists(prefab) || !BundleInspector.IsUnityFs(prefab))
+        {
+            return null;
+        }
+
+        var layers = PaintingComposer.ReadLayers(prefab);
+        if (layers.Count < 2 || layers.All(l => l.Name != name)
+            || layers.Any(l => l.Name != name && !File.Exists(Path.Combine(assetDirectory, LayerBundle(l.Name)))))
+        {
+            return null;
+        }
+
+        var images = layers.Select(l => (l, l.Name == name ? own : ReadPainting(LayerBundle(l.Name), l.Name))).ToList();
+        return images.Any(i => i.Item2 is null)
+            ? null
+            : (PaintingComposer.Compose(images.Select(i => (i.l, i.Item2!)).ToList()), layers);
+    }
+
+    public static string LayerBundle(string layer) => PaintingFolder + layer + TextureSuffix;
+
+    // Reads one painting texture from its own bundle, rebuilt from its tiles.
+    private RgbaImage? ReadPainting(string bundlePath, string name)
+    {
+        var manager = new AssetsManager();
+        try
+        {
+            var (instance, _) = Load(manager, bundlePath);
+            var texture = FindByName(manager, instance, AssetClassID.Texture2D, name);
+            var image = texture is null ? null : TextureReader.Read(texture, instance);
+            if (image is null)
+            {
+                return null;
+            }
+
+            var mesh = FindMesh(manager, instance, bundlePath, name + MeshSuffix);
+            return mesh is null ? image : PaintingReconstructor.Rebuild(image, mesh);
         }
         finally
         {
