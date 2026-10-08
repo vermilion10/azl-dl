@@ -222,6 +222,42 @@ public class StyleTests
         window.Close();
     }
 
+    // Picking Chibi builds a viewer URL on the loopback server, which serves the page and the rig but nothing outside
+    // the data folder. Needs the runtimes in <data>/runtimes and Enterprise's qiye_5 chibi extracted.
+    [AvaloniaFact]
+    public async Task Chibi_viewer_is_served_locally()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+        Assert.SkipUnless(new AzlDl.Core.Viewer.RuntimeStore(new HttpClient(), dataFolder!).IsInstalled, "Viewer runtimes aren't installed.");
+
+        var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
+        await ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip!.Skins.Single(s => s.Painting == "qiye_5");
+        ships.SelectedStage = ships.StageOptions.Single(o => o.Mode == StageMode.Chibi);
+        for (var i = 0; i < 200 && ships.ViewerState == ViewerState.Loading; i++)
+        {
+            await Task.Delay(50);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Assert.Equal(ViewerState.Ready, ships.ViewerState);
+        var url = ships.ViewerUrl!;
+        Assert.Equal("127.0.0.1", url.Host);
+
+        using var http = new HttpClient();
+        var page = await http.GetAsync(url);
+        Assert.True(page.IsSuccessStatusCode);
+        Assert.Contains("SpinePlayer", await page.Content.ReadAsStringAsync());
+
+        var rig = await http.GetAsync(new Uri(url, "/art/char/qiye_5/qiye_5.skel"));
+        Assert.True(rig.IsSuccessStatusCode);
+
+        var escape = await http.GetAsync(new Uri($"http://127.0.0.1:{url.Port}/..%2F..%2FWindows%2Fwin.ini"));
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, escape.StatusCode);
+    }
+
     private static void SaveFrame(Window window, string name)
     {
 #pragma warning disable CS0618 // The replacement overload needs an encoder options type this version doesn't expose.

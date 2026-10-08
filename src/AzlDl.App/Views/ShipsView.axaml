@@ -3,6 +3,7 @@
              xmlns:vm="using:AzlDl.App.ViewModels"
              xmlns:data="using:AzlDl.Core.Data"
              xmlns:controls="using:AzlDl.App.Controls"
+             xmlns:viewer="using:AzlDl.Core.Viewer"
              x:Class="AzlDl.App.Views.ShipsView"
              x:DataType="vm:ShipsViewModel">
   <Panel>
@@ -37,20 +38,63 @@
         </ListBox>
       </DockPanel>
 
-      <!-- Painting stage -->
+      <!-- Stage: the painting, or the chibi / Live2D model in the viewer page -->
       <Border Grid.Column="1" Background="{DynamicResource StageBrush}">
-        <Panel Margin="24">
-          <Image Source="{Binding Painting}" IsVisible="{Binding PaintingShown}" Stretch="Uniform" />
-          <StackPanel IsVisible="{Binding !PaintingShown}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                      Spacing="12" MaxWidth="380">
-            <TextBlock Classes="data" Text="{Binding SelectedSkin.Painting}" FontSize="18" FontWeight="Medium"
-                       HorizontalAlignment="Center" />
-            <TextBlock Classes="muted" Text="{Binding PaintingMessage}" TextWrapping="Wrap" TextAlignment="Center" />
-            <ProgressBar IsIndeterminate="True" IsVisible="{Binding PaintingBusy}" />
-            <Button Classes="primary" IsVisible="{Binding CanDownloadPainting}" Command="{Binding DownloadPaintingCommand}"
-                    HorizontalAlignment="Center" Content="Download painting" />
-          </StackPanel>
-        </Panel>
+        <DockPanel>
+          <ListBox DockPanel.Dock="Top" Classes="nav" Margin="16,8,16,0" ItemsSource="{Binding StageOptions}"
+                   SelectedItem="{Binding SelectedStage}" AutomationProperties.Name="Stage">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:StageOption">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+
+          <Panel Margin="24">
+            <!-- Painting -->
+            <Panel IsVisible="{Binding ShowsPainting}">
+              <Image Source="{Binding Painting}" IsVisible="{Binding PaintingShown}" Stretch="Uniform" />
+              <StackPanel IsVisible="{Binding !PaintingShown}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Spacing="12" MaxWidth="380">
+                <TextBlock Classes="data" Text="{Binding SelectedSkin.Painting}" FontSize="18" FontWeight="Medium"
+                           HorizontalAlignment="Center" />
+                <TextBlock Classes="muted" Text="{Binding PaintingMessage}" TextWrapping="Wrap" TextAlignment="Center" />
+                <ProgressBar IsIndeterminate="True" IsVisible="{Binding PaintingBusy}" />
+                <Button Classes="primary" IsVisible="{Binding CanDownloadPainting}" Command="{Binding DownloadPaintingCommand}"
+                        HorizontalAlignment="Center" Content="Download painting" />
+              </StackPanel>
+            </Panel>
+
+            <!-- Chibi and Live2D -->
+            <Panel IsVisible="{Binding ShowsViewer}">
+              <controls:ViewerHost Source="{Binding ViewerUrl}" IsVisible="{Binding ViewerReady}" />
+              <StackPanel IsVisible="{Binding ViewerMessageShown}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Spacing="12" MaxWidth="420">
+                <TextBlock Classes="muted" Text="{Binding ViewerMessage}" TextWrapping="Wrap" TextAlignment="Center" />
+                <ProgressBar IsIndeterminate="True" IsVisible="{Binding ViewerBusy}" />
+              </StackPanel>
+
+              <!-- First use: say what will be downloaded and under which terms, then download only on request. -->
+              <StackPanel IsVisible="{Binding NeedsRuntimes}" VerticalAlignment="Center" HorizontalAlignment="Center"
+                          Spacing="12" MaxWidth="560">
+                <TextBlock Text="The viewer needs its runtimes" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Classes="muted" TextWrapping="Wrap"
+                           Text="azl-dl doesn't include these. They are downloaded once from their official hosts into your data folder (about 1.3 MB). Two of them are not open source; by downloading you take on their terms." />
+                <ItemsControl ItemsSource="{Binding RuntimeFiles}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="viewer:RuntimeFile">
+                      <StackPanel Margin="0,0,0,8">
+                        <TextBlock Text="{Binding Project}" FontWeight="Medium" />
+                        <TextBlock Classes="muted" FontSize="13" Text="{Binding License}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="primary" Content="Download runtimes" Command="{Binding InstallRuntimesCommand}" />
+              </StackPanel>
+            </Panel>
+          </Panel>
+        </DockPanel>
       </Border>
 
       <!-- Ship details -->

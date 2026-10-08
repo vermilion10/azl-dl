@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>azl-dl viewer</title>
+<!-- Plays a Spine rig (chibis, dynamic skins) or a Live2D model from the local data folder.
+     Query: kind=spine&skel=…&atlas=…  or  kind=live2d&model=…  plus bg, ink and muted colors (hex, no #).
+     The runtimes are not part of azl-dl; the app downloads them into <data>/runtimes on first use. -->
+<style>
+  :root { --bg: #e2e9ee; --ink: #14263a; --muted: #475a6c; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+  #stage { position: absolute; inset: 0; }
+  #stage canvas { display: block; }
+  #bar { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; }
+  #bar[hidden] { display: none; }
+  #bar label { color: var(--muted); }
+  #bar select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--muted);
+    padding: 6px 8px; min-height: 36px; }
+  #bar select:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  #message { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px;
+    color: var(--muted); }
+  #message[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="bar" hidden>
+  <label for="animation">Animation</label>
+  <select id="animation"></select>
+</div>
+<div id="message">Loading…</div>
+<script>
+  const query = new URLSearchParams(location.search);
+  for (const [name, key] of [["--bg", "bg"], ["--ink", "ink"], ["--muted", "muted"]]) {
+    if (/^[0-9a-fA-F]{6}$/.test(query.get(key) || "")) document.documentElement.style.setProperty(name, "#" + query.get(key));
+  }
+
+  const message = document.getElementById("message");
+  const fail = (text) => { message.hidden = false; message.textContent = text; };
+
+  function load(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error("Couldn't load " + src));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function showSpine() {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "/runtimes/spine-player.css";
+    document.head.appendChild(css);
+    await load("/runtimes/spine-player.js");
+
+    // The game's rigs list their animations; "normal" or "stand" is the idle pose when there is one.
+    const player = window.viewer = new spine.SpinePlayer("stage", {
+      skelUrl: query.get("skel"),
+      atlasUrl: query.get("atlas"),
+      premultipliedAlpha: false,
+      showControls: false,
+      alpha: true,
+      backgroundColor: "#00000000",
+      success: (p) => {
+        message.hidden = true;
+        const names = p.skeleton.data.animations.map((a) => a.name);
+        const select = document.getElementById("animation");
+        for (const name of names) select.add(new Option(name, name));
+        const idle = names.find((n) => n === "normal" || n === "stand") || names[0];
+        if (idle) { select.value = idle; p.setAnimation(idle, true); }
+        select.onchange = () => p.setAnimation(select.value, true);
+        document.getElementById("bar").hidden = names.length < 2;
+      },
+      error: (_, reason) => fail("The rig couldn't be shown: " + reason),
+    });
+  }
+
+  async function showLive2D() {
+    await load("/runtimes/live2dcubismcore.min.js");
+    await load("/runtimes/pixi.min.js");
+    await load("/runtimes/cubism4.min.js");
+
+    const stage = document.getElementById("stage");
+    const app = new PIXI.Application({ backgroundAlpha: 0, resizeTo: window, antialias: true });
+    stage.appendChild(app.view);
+
+    const model = window.viewer = await PIXI.live2d.Live2DModel.from(query.get("model"), { autoInteract: false });
+    app.stage.addChild(model);
+    const fit = () => {
+      const scale = Math.min(app.screen.width / model.internalModel.width, app.screen.height / model.internalModel.height) * 0.95;
+      model.scale.set(scale);
+      model.x = (app.screen.width - model.width) / 2;
+      model.y = (app.screen.height - model.height) / 2;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    message.hidden = true;
+  }
+
+  const kind = query.get("kind");
+  (kind === "spine" ? showSpine() : kind === "live2d" ? showLive2D() : Promise.reject(new Error("Nothing to show.")))
+    .catch((e) => fail(e.message));
+</script>
+</body>
+</html>
