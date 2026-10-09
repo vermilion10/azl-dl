@@ -5,8 +5,10 @@ using AssetsTools.NET.Extra;
 namespace AzlDl.Core.Art;
 
 // One Spine skeleton of a dynamic skin, placed the way the game's prefab places it. X and Y are in the prefab's UI
-// pixels (y up), Scale turns skeleton units into those pixels, and layers are listed back to front.
-public sealed record SpineLayer(string Skeleton, string Atlas, double X, double Y, double Scale, string Animation);
+// pixels (y up), Scale turns skeleton units into those pixels, and layers are listed back to front. Dynamic skin
+// textures are premultiplied: the game draws them with SkeletonGraphic's default material, which has no
+// straight-alpha switch, and their colour never exceeds their alpha.
+public sealed record SpineLayer(string Skeleton, string Atlas, double X, double Y, double Scale, string Animation, bool Premultiplied = true);
 
 // Reads where a dynamic skin's skeletons sit. A spinepainting/<name> bundle is a UI prefab whose SkeletonGraphic
 // components point at SkeletonDataAssets in a resource bundle, usually spinepainting/<name>_res. Variants such as

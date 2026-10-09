@@ -53,7 +53,13 @@
           <Panel Margin="24">
             <!-- Painting -->
             <Panel IsVisible="{Binding ShowsPainting}">
-              <Image Source="{Binding Painting}" IsVisible="{Binding PaintingShown}" Stretch="Uniform" />
+              <DockPanel IsVisible="{Binding PaintingShown}">
+                <TextBlock DockPanel.Dock="Bottom" Classes="muted" FontSize="13" Margin="0,12,0,0" HorizontalAlignment="Right"
+                           Text="Scroll to zoom · drag to move · double-click to reset" />
+                <controls:ZoomPanel AutomationProperties.Name="Painting. Plus and minus zoom, arrow keys move, 0 resets.">
+                  <Image Source="{Binding Painting}" Stretch="Uniform" />
+                </controls:ZoomPanel>
+              </DockPanel>
               <StackPanel IsVisible="{Binding !PaintingShown}" HorizontalAlignment="Center" VerticalAlignment="Center"
                           Spacing="12" MaxWidth="380">
                 <TextBlock Classes="data" Text="{Binding SelectedSkin.Painting}" FontSize="18" FontWeight="Medium"

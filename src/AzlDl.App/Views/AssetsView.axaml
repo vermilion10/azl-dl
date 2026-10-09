@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AzlDl.App.ViewModels"
              xmlns:unity="using:AzlDl.Core.Unity"
+             xmlns:controls="using:AzlDl.App.Controls"
              x:Class="AzlDl.App.Views.AssetsView"
              x:DataType="vm:AssetsViewModel">
   <Panel>
@@ -89,7 +90,9 @@
         <ProgressBar DockPanel.Dock="Bottom" IsIndeterminate="True" IsVisible="{Binding PreviewBusy}" Margin="28,0" />
 
         <Panel Margin="28,0,28,8">
-          <Image Source="{Binding PreviewImage}" IsVisible="{Binding ShowsImage}" Stretch="Uniform" StretchDirection="DownOnly" />
+          <controls:ZoomPanel IsVisible="{Binding ShowsImage}" AutomationProperties.Name="Preview. Scroll or plus and minus zoom, drag or arrow keys move, double-click or 0 resets.">
+            <Image Source="{Binding PreviewImage}" Stretch="Uniform" StretchDirection="DownOnly" />
+          </controls:ZoomPanel>
           <Border IsVisible="{Binding ShowsText}" Background="{DynamicResource SurfaceBrush}" Padding="16">
             <ScrollViewer HorizontalScrollBarVisibility="Auto">
               <SelectableTextBlock Classes="data" FontSize="13" Text="{Binding Preview.Text}" />

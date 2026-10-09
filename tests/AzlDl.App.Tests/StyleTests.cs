@@ -249,7 +249,7 @@ public class StyleTests
         using var http = new HttpClient();
         var page = await http.GetAsync(url);
         Assert.True(page.IsSuccessStatusCode);
-        Assert.Contains("SpinePlayer", await page.Content.ReadAsStringAsync());
+        Assert.Contains("showSkeletons", await page.Content.ReadAsStringAsync());
 
         var rig = await http.GetAsync(new Uri(url, "/art/char/qiye_5/qiye_5.skel"));
         Assert.True(rig.IsSuccessStatusCode);
@@ -283,6 +283,10 @@ public class StyleTests
         var layout = System.Web.HttpUtility.ParseQueryString(ships.ViewerUrl!.Query)["layout"]!;
         var layers = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(new Uri(ships.ViewerUrl, layout))).RootElement;
         Assert.Equal(2, layers.GetArrayLength());
+
+        // ship_skin_expression puts expression 1 on New Jersey's first main screen line.
+        var labels = System.Text.Json.JsonDocument.Parse(System.Web.HttpUtility.ParseQueryString(ships.ViewerUrl.Query)["labels"]!).RootElement;
+        Assert.Contains("Main screen 1", labels.GetProperty("1").GetString());
         foreach (var layer in layers.EnumerateArray())
         {
             var skeleton = await http.GetAsync(new Uri(ships.ViewerUrl, "/art/" + layer.GetProperty("skeleton").GetString()));
@@ -295,6 +299,29 @@ public class StyleTests
         await WaitUntil(() => ships.ViewerState != ViewerState.Loading);
         Assert.Equal(ViewerState.Unavailable, ships.ViewerState);
         Assert.EndsWith("has no dynamic skin.", ships.ViewerMessage);
+    }
+
+    // Ulrich von Hutten's "What Comes After the Bell" is a background with the character as a second layer. A copy
+    // saved before layers were stacked (no layers.json beside it) is rebuilt with both.
+    [AvaloniaFact]
+    public async Task Layered_painting_is_stacked()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var layout = Path.Combine(dataFolder!, "art", "painting", "wuerlixi_4.layers.json");
+        File.Delete(layout);
+        var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
+        await ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedShip = ships.Ships.First(s => s.Skins.Any(k => k.Painting == "wuerlixi_4"));
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip.Skins.Single(k => k.Painting == "wuerlixi_4");
+        await WaitUntil(() => ships.PaintingState is PaintingState.Shown or PaintingState.Failed && File.Exists(layout));
+
+        Assert.Equal(PaintingState.Shown, ships.PaintingState);
+        var layers = System.Text.Json.JsonDocument.Parse(File.ReadAllText(layout)).RootElement;
+        Assert.Equal(["wuerlixi_4", "wuerlixi_4_rw"], layers.EnumerateArray().Select(l => l.GetProperty("name").GetString()));
     }
 
     // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.

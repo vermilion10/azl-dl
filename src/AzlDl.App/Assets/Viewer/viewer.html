@@ -4,32 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>azl-dl viewer</title>
-<!-- Plays a Spine rig (chibis, dynamic skins) or a Live2D model from the local data folder.
+<!-- Plays Spine rigs (chibis, dynamic skins) and Live2D models from the local data folder.
      Query: kind=spine&skel=…&atlas=…, kind=layers&layout=… (a dynamic skin's layers.json) or kind=live2d&model=…,
-     plus bg, ink and muted colors (hex, no #).
+     plus bg, ink and muted colors (hex, no #) and labels: JSON of animation name -> the voice lines that use it.
      The runtimes are not part of azl-dl; the app downloads them into <data>/runtimes on first use. -->
 <style>
   :root { --bg: #e2e9ee; --ink: #14263a; --muted: #475a6c; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
     font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
-  #stage { position: absolute; inset: 0; }
-  #stage canvas { display: block; }
-  #bar { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 8px; align-items: center; }
-  #bar[hidden] { display: none; }
-  #bar label { color: var(--muted); }
+  #stage { position: absolute; inset: 0; cursor: grab; touch-action: none; }
+  #stage:active { cursor: grabbing; }
+  #stage:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  #bar { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px 20px;
+    align-items: center; pointer-events: none; }
+  #bar > * { pointer-events: auto; }
+  #bar label { color: var(--muted); margin-right: 8px; }
   #bar select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--muted);
-    padding: 6px 8px; min-height: 36px; }
+    padding: 6px 8px; min-height: 36px; max-width: min(460px, 80vw); }
   #bar select:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  #bar [hidden] { display: none; }
+  #hint { color: var(--muted); margin-left: auto; }
   #message { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px;
-    color: var(--muted); }
+    color: var(--muted); pointer-events: none; }
   #message[hidden] { display: none; }
 </style>
 </head>
 <body>
-<div id="stage"></div>
-<div id="bar" hidden>
-  <label for="animation">Animation</label>
-  <select id="animation"></select>
+<div id="stage" tabindex="0" aria-label="Model. Scroll or press plus and minus to zoom, drag or use the arrow keys to move, double-click or press 0 to reset."></div>
+<div id="bar">
+  <span id="motionGroup" hidden><label for="motion">Motion</label><select id="motion"></select></span>
+  <span id="expressionGroup" hidden><label for="expression">Expression</label><select id="expression"></select></span>
+  <span id="hint">Scroll to zoom · drag to move · double-click to reset</span>
 </div>
 <div id="message">Loading…</div>
 <script>
@@ -38,6 +44,10 @@
     if (/^[0-9a-fA-F]{6}$/.test(query.get(key) || "")) document.documentElement.style.setProperty(name, "#" + query.get(key));
   }
 
+  let labels = {};
+  try { labels = JSON.parse(query.get("labels") || "{}"); } catch { labels = {}; }
+
+  const stage = document.getElementById("stage");
   const message = document.getElementById("message");
   const fail = (text) => { message.hidden = false; message.textContent = text; };
 
@@ -51,52 +61,72 @@
     });
   }
 
-  async function showSpine() {
-    const css = document.createElement("link");
-    css.rel = "stylesheet";
-    css.href = "/runtimes/spine-player.css";
-    document.head.appendChild(css);
-    await load("/runtimes/spine-player.js");
+  // "1 · Main screen 1, Touch" when the game plays this animation with voice lines, else the plain name.
+  const describe = (name) => labels[name] ? `${name} · ${labels[name]}` : name;
 
-    // The game's rigs list their animations; "normal" or "stand" is the idle pose when there is one.
-    const player = window.viewer = new spine.SpinePlayer("stage", {
-      skelUrl: query.get("skel"),
-      atlasUrl: query.get("atlas"),
-      premultipliedAlpha: false,
-      showControls: false,
-      alpha: true,
-      backgroundColor: "#00000000",
-      success: (p) => {
-        message.hidden = true;
-        const play = (name) => p.setAnimation(name, true);
-        const idle = picker(p.skeleton.data.animations.map((a) => a.name), "", play);
-        if (idle) play(idle);
-      },
-      error: (_, reason) => fail("The rig couldn't be shown: " + reason),
+  function fill(id, names, chosen, play, none) {
+    const select = document.getElementById(id);
+    select.replaceChildren();
+    if (none) select.add(new Option(none, ""));
+    for (const name of names) select.add(new Option(describe(name), name));
+    select.value = chosen;
+    select.onchange = () => play(select.value);
+    document.getElementById(id + "Group").hidden = names.length < (none ? 1 : 2);
+  }
+
+  // Wheel, drag, double-click and keyboard pan/zoom. view.zoom 1 fits the model; view.x/y shift it in screen pixels.
+  const view = { zoom: 1, x: 0, y: 0 };
+  function interact(onChange) {
+    const clampZoom = (z) => Math.min(12, Math.max(0.2, z));
+    const zoomAt = (factor, px, py) => {
+      const next = clampZoom(view.zoom * factor);
+      const rect = stage.getBoundingClientRect();
+      const cx = px - rect.width / 2, cy = py - rect.height / 2;
+      view.x = cx - (cx - view.x) * (next / view.zoom);
+      view.y = cy - (cy - view.y) * (next / view.zoom);
+      view.zoom = next;
+      onChange();
+    };
+    stage.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      zoomAt(Math.exp(-e.deltaY * 0.0015), e.offsetX, e.offsetY);
+    }, { passive: false });
+    let drag = null;
+    stage.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; stage.setPointerCapture(e.pointerId); stage.focus(); });
+    stage.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      view.x += e.clientX - drag.x; view.y += e.clientY - drag.y;
+      drag = { x: e.clientX, y: e.clientY };
+      onChange();
+    });
+    stage.addEventListener("pointerup", () => { drag = null; });
+    stage.addEventListener("pointercancel", () => { drag = null; });
+    const reset = () => { view.zoom = 1; view.x = 0; view.y = 0; onChange(); };
+    stage.addEventListener("dblclick", reset);
+    stage.addEventListener("keydown", (e) => {
+      const r = stage.getBoundingClientRect();
+      const step = 40;
+      const keys = {
+        "+": () => zoomAt(1.2, r.width / 2, r.height / 2), "=": () => zoomAt(1.2, r.width / 2, r.height / 2),
+        "-": () => zoomAt(1 / 1.2, r.width / 2, r.height / 2), "0": reset,
+        ArrowLeft: () => { view.x += step; onChange(); }, ArrowRight: () => { view.x -= step; onChange(); },
+        ArrowUp: () => { view.y += step; onChange(); }, ArrowDown: () => { view.y -= step; onChange(); },
+      };
+      if (keys[e.key]) { e.preventDefault(); keys[e.key](); }
     });
   }
 
-  // Fills the animation picker; returns the starting animation.
-  function picker(names, preferred, play) {
-    const select = document.getElementById("animation");
-    for (const name of names) select.add(new Option(name, name));
-    const idle = names.includes(preferred) ? preferred : names.find((n) => n === "normal" || n === "stand") || names[0];
-    select.value = idle;
-    select.onchange = () => play(select.value);
-    document.getElementById("bar").hidden = names.length < 2;
-    return idle;
-  }
+  // Expressions are poses with no length that only swap attachments (faces); the game plays them over the idle
+  // motion instead of in place of it.
+  const isExpression = (animation) => animation.duration < 0.05
+    || animation.timelines.every((t) => t instanceof spine.AttachmentTimeline || t instanceof spine.DrawOrderTimeline);
 
-  // A dynamic skin: one or more skeletons drawn back to front, each placed and scaled as the game's prefab does.
-  async function showLayers() {
+  // Draws one or more skeletons back to front. Each layer: skeleton and atlas paths under /art/, position, scale,
+  // starting animation, and whether its textures are premultiplied.
+  async function showSkeletons(layout) {
     await load("/runtimes/spine-player.js");
-    const response = await fetch(query.get("layout"));
-    if (!response.ok) throw new Error("The layer list couldn't be loaded.");
-    const layout = await response.json();
-
     const canvas = document.createElement("canvas");
-    canvas.style.width = canvas.style.height = "100%";
-    document.getElementById("stage").appendChild(canvas);
+    stage.appendChild(canvas);
     const context = new spine.webgl.ManagedWebGLRenderingContext(canvas, { alpha: true, premultipliedAlpha: false });
     const renderer = new spine.webgl.SceneRenderer(canvas, context);
     const assets = new spine.webgl.AssetManager(context, "/art/");
@@ -111,27 +141,55 @@
       wait();
     });
 
+    // Paintings are drawn far smaller than their textures, so mipmaps keep thin lines from breaking up.
+    const powerOfTwo = (n) => (n & (n - 1)) === 0;
+    for (const layer of layout) {
+      for (const page of assets.get(layer.atlas).pages) {
+        const texture = page.texture, image = texture.getImage();
+        if (powerOfTwo(image.width) && powerOfTwo(image.height)) {
+          texture.useMipMaps = true;
+          texture.update(true);
+          texture.setFilters(spine.TextureFilter.MipMapLinearLinear, spine.TextureFilter.Linear);
+        }
+      }
+    }
+
     const layers = layout.map((layer) => {
       const binary = new spine.SkeletonBinary(new spine.AtlasAttachmentLoader(assets.get(layer.atlas)));
-      binary.scale = layer.scale;
+      binary.scale = layer.scale ?? 1;
       const data = binary.readSkeletonData(assets.get(layer.skeleton));
       const skeleton = new spine.Skeleton(data);
-      skeleton.x = layer.x;
-      skeleton.y = layer.y;
-      return { skeleton, state: new spine.AnimationState(new spine.AnimationStateData(data)) };
+      skeleton.x = layer.x ?? 0;
+      skeleton.y = layer.y ?? 0;
+      const state = new spine.AnimationState(new spine.AnimationStateData(data));
+      return { skeleton, state, premultiplied: !!layer.premultiplied };
     });
 
-    const play = (name) => {
+    const all = layers.flatMap((l) => l.skeleton.data.animations);
+    const motions = [...new Set(all.filter((a) => !isExpression(a)).map((a) => a.name))];
+    const expressions = [...new Set(all.filter(isExpression).map((a) => a.name))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const idle = [layout[0].animation, "normal", "stand"].find((n) => motions.includes(n)) || motions[0];
+
+    // A layer without the chosen motion keeps its idle one, so a background-only motion doesn't freeze the character.
+    const playMotion = (name) => {
       for (const { skeleton, state } of layers) {
-        if (skeleton.data.findAnimation(name)) state.setAnimation(0, name, true);
-        else state.clearTracks();
-        skeleton.setToSetupPose();
+        const own = skeleton.data.findAnimation(name) ? name : [idle, "normal"].find((n) => skeleton.data.findAnimation(n));
+        if (own) state.setAnimation(0, own, true);
       }
     };
-    const names = [...new Set(layers.flatMap((l) => l.skeleton.data.animations.map((a) => a.name)))];
-    play(picker(names, layout[0].animation, play));
+    const playExpression = (name) => {
+      for (const { skeleton, state } of layers) {
+        const found = name && skeleton.data.findAnimation(name);
+        if (found && isExpression(found)) state.setAnimation(1, name, true);
+        else state.setEmptyAnimation(1, 0);
+      }
+    };
+    if (idle) playMotion(idle);
+    fill("motion", motions, idle || "", playMotion);
+    fill("expression", expressions, "", playExpression, "Default");
 
-    // Frame the union of the layers' bounds in the setup pose.
+    // Frame the union of the layers' bounds in the starting pose.
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const { skeleton, state } of layers) {
       state.apply(skeleton);
@@ -142,20 +200,26 @@
       maxX = Math.max(maxX, offset.x + size.x); maxY = Math.max(maxY, offset.y + size.y);
     }
 
+    const gl = context.gl;
     const drawFrame = (delta) => {
-      renderer.resize(spine.webgl.ResizeMode.Expand);
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.round(canvas.clientWidth * ratio), height = Math.round(canvas.clientHeight * ratio);
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+      gl.viewport(0, 0, width, height);
       const camera = renderer.camera;
-      camera.position.x = (minX + maxX) / 2;
-      camera.position.y = (minY + maxY) / 2;
-      camera.zoom = Math.max((maxX - minX) / canvas.width, (maxY - minY) / canvas.height) * 1.05;
-      context.gl.clearColor(0, 0, 0, 0);
-      context.gl.clear(context.gl.COLOR_BUFFER_BIT);
+      camera.setViewport(width, height);
+      const fit = Math.max((maxX - minX) / width, (maxY - minY) / height) * 1.05;
+      camera.zoom = fit / view.zoom;
+      camera.position.x = (minX + maxX) / 2 - view.x * ratio * camera.zoom;
+      camera.position.y = (minY + maxY) / 2 + view.y * ratio * camera.zoom;
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       renderer.begin();
-      for (const { skeleton, state } of layers) {
+      for (const { skeleton, state, premultiplied } of layers) {
         state.update(delta);
         state.apply(skeleton);
         skeleton.updateWorldTransform();
-        renderer.drawSkeleton(skeleton, false);
+        renderer.drawSkeleton(skeleton, premultiplied);
       }
       renderer.end();
     };
@@ -167,34 +231,49 @@
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
-    window.viewer = { layers, drawFrame };
+    interact(() => {});
+    window.viewer = { layers, drawFrame, view, motions, expressions };
     message.hidden = true;
   }
+
+  async function showLayers() {
+    const response = await fetch(query.get("layout"));
+    if (!response.ok) throw new Error("The layer list couldn't be loaded.");
+    // Layer lists written before the field existed are dynamic skins too, which are premultiplied.
+    await showSkeletons((await response.json()).map((layer) => ({ premultiplied: true, ...layer })));
+  }
+
+  // A chibi is one skeleton with straight-alpha textures.
+  const showSpine = () => showSkeletons([{
+    skeleton: query.get("skel").replace(/^\/art\//, ""),
+    atlas: query.get("atlas").replace(/^\/art\//, ""),
+    premultiplied: query.get("pma") === "1",
+  }]);
 
   async function showLive2D() {
     await load("/runtimes/live2dcubismcore.min.js");
     await load("/runtimes/pixi.min.js");
     await load("/runtimes/cubism4.min.js");
 
-    const stage = document.getElementById("stage");
-    const app = new PIXI.Application({ backgroundAlpha: 0, resizeTo: window, antialias: true });
+    const app = new PIXI.Application({ backgroundAlpha: 0, resizeTo: window, antialias: true,
+      resolution: window.devicePixelRatio || 1, autoDensity: true });
     stage.appendChild(app.view);
 
     const model = window.viewer = await PIXI.live2d.Live2DModel.from(query.get("model"), { autoInteract: false });
     app.stage.addChild(model);
-    const fit = () => {
-      const scale = Math.min(app.screen.width / model.internalModel.width, app.screen.height / model.internalModel.height) * 0.95;
-      model.scale.set(scale);
-      model.x = (app.screen.width - model.width) / 2;
-      model.y = (app.screen.height - model.height) / 2;
+    const place = () => {
+      const fit = Math.min(app.screen.width / model.internalModel.width, app.screen.height / model.internalModel.height) * 0.95;
+      model.scale.set(fit * view.zoom);
+      model.x = (app.screen.width - model.width) / 2 + view.x;
+      model.y = (app.screen.height - model.height) / 2 + view.y;
     };
-    fit();
-    window.addEventListener("resize", fit);
+    place();
+    window.addEventListener("resize", place);
+    interact(place);
     message.hidden = true;
   }
 
-  const kind = query.get("kind");
-  const show = { spine: showSpine, layers: showLayers, live2d: showLive2D }[kind];
+  const show = { spine: showSpine, layers: showLayers, live2d: showLive2D }[query.get("kind")];
   (show ? show() : Promise.reject(new Error("Nothing to show.")))
     .catch((e) => fail(e.message));
 </script>

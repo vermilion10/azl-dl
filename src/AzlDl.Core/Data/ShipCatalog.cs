@@ -8,7 +8,7 @@ public sealed record StatValue(string Label, string Value);
 // Description has its $n placeholders filled with the level 1 and max level values ("40.0% → 70.0%").
 public sealed record SkillInfo(string Name, string Description, int MaxLevel);
 
-public sealed record VoiceLine(string Label, string Text);
+public sealed record VoiceLine(string Label, string Text, string Key);
 
 // Number is the skin's 1-based position in the ship's skin list.
 public sealed record SkinInfo(long Id, string Name, string Painting, int Number);
@@ -54,14 +54,19 @@ public sealed class ShipCatalog
 
     private readonly JsonObject words;
     private readonly IReadOnlyList<(string Key, string Label)> voiceKeys;
+    private readonly IReadOnlyDictionary<string, string> chibiActions;
+    private readonly JsonObject expressions;
 
     public IReadOnlyList<ShipInfo> Ships { get; }
 
-    private ShipCatalog(IReadOnlyList<ShipInfo> ships, JsonObject words, IReadOnlyList<(string Key, string Label)> voiceKeys)
+    private ShipCatalog(IReadOnlyList<ShipInfo> ships, JsonObject words, IReadOnlyList<(string Key, string Label)> voiceKeys,
+        IReadOnlyDictionary<string, string> chibiActions, JsonObject expressions)
     {
         Ships = ships;
         this.words = words;
         this.voiceKeys = voiceKeys;
+        this.chibiActions = chibiActions;
+        this.expressions = expressions;
     }
 
     // The tables the catalog needs, relative to the data folder.
@@ -97,6 +102,15 @@ public sealed class ShipCatalog
             .OrderBy(v => v["profile_index"] is null ? int.MaxValue : Long(v["profile_index"]))
             .Select(v => (Text(v["key"]), Text(v["voice_name"])))
             .ToList();
+
+        // The chibi animation the profile screen plays with each voice line.
+        var chibiActions = voices.Select(p => p.Value).OfType<JsonObject>()
+            .Where(v => v["key"] is not null && Text(v["spine_action"]).Length > 0)
+            .ToDictionary(v => Text(v["key"]), v => Text(v["spine_action"]));
+
+        // Per painting, the face (or dynamic skin expression) shown with each voice line. Older data folders lack it.
+        var expressionFile = Path.Combine(dataFolder, "sharecfg/ship_skin_expression.json");
+        var expressions = File.Exists(expressionFile) ? Read("sharecfg/ship_skin_expression.json") : [];
 
         string Tip(string key) => tips[key]?["tip"]?.GetValue<string>().Trim() ?? key;
 
@@ -178,7 +192,7 @@ public sealed class ShipCatalog
                 skinsByGroup.GetValueOrDefault(group) ?? []));
         }
 
-        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys);
+        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, expressions);
     }
 
     // A skin's voice lines. Skins only store the lines they change; the rest come from the ship's default skin, as
@@ -200,11 +214,35 @@ public sealed class ShipCatalog
                 : Line(key);
             if (text.Trim().Length > 0)
             {
-                lines.Add(new VoiceLine(label, text.Trim()));
+                lines.Add(new VoiceLine(label, text.Trim(), key));
             }
         }
 
         return lines;
+    }
+
+    // Animation name -> the voice lines the game plays it with, for this skin's lines only ("Main screen 1, Normal
+    // touch"). Chibis use character_voice's spine_action; dynamic skins use the skin's ship_skin_expression entry,
+    // whose keys spell main lines as main_1 rather than main1.
+    public IReadOnlyDictionary<string, string> AnimationLabels(ShipInfo ship, SkinInfo skin, bool dynamicSkin)
+    {
+        var faces = expressions[skin.Painting] as JsonObject;
+        string? Animation(string key)
+        {
+            if (!dynamicSkin)
+            {
+                return chibiActions.GetValueOrDefault(key);
+            }
+
+            var faceKey = key.StartsWith("main", StringComparison.Ordinal) && int.TryParse(key.AsSpan(4), out var n) ? $"main_{n}" : key;
+            return faces?[faceKey] is { } face ? Text(face) : null;
+        }
+
+        return VoiceLines(ship, skin)
+            .Select(line => (Animation: Animation(line.Key), line.Label))
+            .Where(p => !string.IsNullOrEmpty(p.Animation))
+            .GroupBy(p => p.Animation!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(p => p.Label)), StringComparer.Ordinal);
     }
 
     // "$1 chance" with desc_get_add [["40.0%", "70.0%"]] becomes "40.0% → 70.0% chance" (level 1 → max level).

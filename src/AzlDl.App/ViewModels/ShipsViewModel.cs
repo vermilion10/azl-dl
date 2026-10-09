@@ -273,6 +273,12 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
                 StageMode.Dynamic => $"kind=layers&layout=/art/{bundle}/{DynamicSkinReader.LayoutFileName}",
                 _ => $"kind=live2d&model=/art/{bundle}/{skin.Painting}.model3.json",
             };
+            if (mode != StageMode.Live2D && catalog is not null && SelectedShip is { } ship)
+            {
+                var labels = catalog.AnimationLabels(ship, skin, mode == StageMode.Dynamic);
+                query += "&labels=" + Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(labels));
+            }
+
             ViewerUrl = Server().UrlFor($"/viewer.html?{query}&{ThemeColors()}");
             ViewerState = ViewerState.Ready;
         }
@@ -345,11 +351,17 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             return;
         }
 
-        var path = Fetcher().PaintingPath(skin.Painting);
-        if (File.Exists(path))
+        var fetcher = Fetcher();
+        var path = fetcher.PaintingPath(skin.Painting);
+        if (fetcher.IsPaintingCurrent(skin.Painting))
         {
             Painting = new Bitmap(path);
             PaintingState = PaintingState.Shown;
+        }
+        else if (File.Exists(path))
+        {
+            // Saved before its other layers were stacked onto it; rebuild it from the bundles.
+            _ = DownloadPaintingAsync();
         }
         else
         {
