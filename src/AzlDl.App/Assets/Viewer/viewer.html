@@ -127,7 +127,7 @@
     await load("/runtimes/spine-player.js");
     const canvas = document.createElement("canvas");
     stage.appendChild(canvas);
-    const context = new spine.webgl.ManagedWebGLRenderingContext(canvas, { alpha: true, premultipliedAlpha: false });
+    const context = new spine.webgl.ManagedWebGLRenderingContext(canvas, { alpha: true, premultipliedAlpha: true });
     const renderer = new spine.webgl.SceneRenderer(canvas, context);
     const assets = new spine.webgl.AssetManager(context, "/art/");
     for (const layer of layout) {
@@ -141,16 +141,20 @@
       wait();
     });
 
-    // Paintings are drawn far smaller than their textures, so mipmaps keep thin lines from breaking up.
+    // Textures are uploaded premultiplied and drawn that way. Straight-alpha textures (chibis) are premultiplied on
+    // upload: their fully transparent pixels are black, and filtering or mipmapping them straight bleeds that black
+    // into soft edges, outlines and blush. Mipmaps keep thin lines intact when a large texture is drawn small.
+    const gl = context.gl;
     const powerOfTwo = (n) => (n & (n - 1)) === 0;
     for (const layer of layout) {
       for (const page of assets.get(layer.atlas).pages) {
         const texture = page.texture, image = texture.getImage();
-        if (powerOfTwo(image.width) && powerOfTwo(image.height)) {
-          texture.useMipMaps = true;
-          texture.update(true);
-          texture.setFilters(spine.TextureFilter.MipMapLinearLinear, spine.TextureFilter.Linear);
-        }
+        const mipmaps = powerOfTwo(image.width) && powerOfTwo(image.height);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, !layer.premultiplied);
+        texture.useMipMaps = mipmaps;
+        texture.update(mipmaps);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        if (mipmaps) texture.setFilters(spine.TextureFilter.MipMapLinearLinear, spine.TextureFilter.Linear);
       }
     }
 
@@ -162,7 +166,7 @@
       skeleton.x = layer.x ?? 0;
       skeleton.y = layer.y ?? 0;
       const state = new spine.AnimationState(new spine.AnimationStateData(data));
-      return { skeleton, state, premultiplied: !!layer.premultiplied };
+      return { skeleton, state };
     });
 
     const all = layers.flatMap((l) => l.skeleton.data.animations);
@@ -200,7 +204,6 @@
       maxX = Math.max(maxX, offset.x + size.x); maxY = Math.max(maxY, offset.y + size.y);
     }
 
-    const gl = context.gl;
     const drawFrame = (delta) => {
       const ratio = window.devicePixelRatio || 1;
       const width = Math.round(canvas.clientWidth * ratio), height = Math.round(canvas.clientHeight * ratio);
@@ -215,11 +218,11 @@
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       renderer.begin();
-      for (const { skeleton, state, premultiplied } of layers) {
+      for (const { skeleton, state } of layers) {
         state.update(delta);
         state.apply(skeleton);
         skeleton.updateWorldTransform();
-        renderer.drawSkeleton(skeleton, premultiplied);
+        renderer.drawSkeleton(skeleton, true);
       }
       renderer.end();
     };
