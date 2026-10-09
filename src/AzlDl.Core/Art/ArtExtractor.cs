@@ -9,7 +9,8 @@ public sealed record ExtractSummary(int Bundles, int Images, int Paintings, int 
 
 // Converts downloaded bundles into plain files under OutputDirectory:
 // - painting/<name>_tex bundles become art/painting/<name>.png, reassembled from tiles when the painting has a mesh,
-//   and stacked with its other layers (with a <name>.layers.json) when painting/<name> is a layered prefab;
+//   stacked with its other layers when painting/<name> is a layered prefab, and described by a <name>.layout.json
+//   (image size, layers, expression face slot) whenever that prefab is downloaded;
 // - every other Texture2D becomes <bundle path>/<texture name>.png;
 // - TextAssets (Spine .skel and .atlas files, for example) are written as-is under <bundle path>/;
 // - live2d/<name> bundles also get <name>.moc3 and a <name>.model3.json;
@@ -73,16 +74,17 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
                     var mesh = FindMesh(manager, instance, bundlePath, name + MeshSuffix);
                     var painting = mesh is null ? image : PaintingReconstructor.Rebuild(image, mesh);
                     var target = Target("painting", name + ".png");
-                    var layered = ComposeLayers(name, painting);
-                    (layered?.Image ?? painting).WritePng(target);
-                    if (layered is not null)
+                    var (placed, layout) = Place(name, painting);
+                    placed.Image.WritePng(target);
+                    var legacy = Path.ChangeExtension(target, ".layers.json");
+                    if (File.Exists(legacy))
                     {
-                        PaintingComposer.WriteLayout(PaintingComposer.LayoutPath(target), layered.Value.Layers);
+                        File.Delete(legacy);
                     }
-                    else if (File.Exists(PaintingComposer.LayoutPath(target)))
-                    {
-                        File.Delete(PaintingComposer.LayoutPath(target));
-                    }
+
+                    // Without a prefab the painting is just its texture, with no face slot.
+                    layout ??= new PaintingLayout([new PaintingLayer(name, 0, 0, painting.Width, painting.Height)], null);
+                    PaintingComposer.WriteLayout(PaintingComposer.LayoutPath(target), placed, layout);
 
                     paintings++;
                 }
@@ -118,26 +120,29 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
         }
     }
 
-    // Returns the stacked painting when painting/<name> is a layered prefab whose layers are all downloaded, else null.
-    private (RgbaImage Image, IReadOnlyList<PaintingLayer> Layers)? ComposeLayers(string name, RgbaImage own)
+    // Places the painting using its prefab when painting/<name> is downloaded: layered paintings are stacked (when all
+    // their layers are downloaded) and the face slot is located. Without the prefab the texture is used as it is, with
+    // no layout.
+    private (PlacedPainting Placed, PaintingLayout? Layout) Place(string name, RgbaImage own)
     {
+        var alone = new PlacedPainting(own, 0, 0, 1);
         var prefab = Path.Combine(assetDirectory, PaintingFolder + name);
         if (!File.Exists(prefab) || !BundleInspector.IsUnityFs(prefab))
         {
-            return null;
+            return (alone, null);
         }
 
-        var layers = PaintingComposer.ReadLayers(prefab);
-        if (layers.Count < 2 || layers.All(l => l.Name != name)
-            || layers.Any(l => l.Name != name && !File.Exists(Path.Combine(assetDirectory, LayerBundle(l.Name)))))
+        var layout = PaintingComposer.ReadLayout(prefab);
+        if (layout.Layers.All(l => l.Name != name)
+            || layout.Layers.Any(l => l.Name != name && !File.Exists(Path.Combine(assetDirectory, LayerBundle(l.Name)))))
         {
-            return null;
+            return (alone, null);
         }
 
-        var images = layers.Select(l => (l, l.Name == name ? own : ReadPainting(LayerBundle(l.Name), l.Name))).ToList();
+        var images = layout.Layers.Select(l => (l, l.Name == name ? own : ReadPainting(LayerBundle(l.Name), l.Name))).ToList();
         return images.Any(i => i.Item2 is null)
-            ? null
-            : (PaintingComposer.Compose(images.Select(i => (i.l, i.Item2!)).ToList()), layers);
+            ? (alone, null)
+            : (PaintingComposer.Compose(images.Select(i => (i.l, i.Item2!)).ToList()), layout);
     }
 
     public static string LayerBundle(string layer) => PaintingFolder + layer + TextureSuffix;

@@ -6,7 +6,8 @@ using Avalonia.Media;
 namespace AzlDl.App.Controls;
 
 // Lets the user zoom and move its child: scroll to zoom around the pointer, drag to move, double-click to reset.
-// With keyboard focus, + and - zoom, the arrow keys move and 0 resets. A new picture in a child Image resets the view.
+// With keyboard focus, + and - zoom, the arrow keys move and 0 resets. A new child, a new picture in a child Image, or
+// a change of ResetOn resets the view.
 public class ZoomPanel : Decorator
 {
     private const double MinZoom = 1;
@@ -34,6 +35,16 @@ public class ZoomPanel : Decorator
         set => SetValue(BackgroundProperty, value);
     }
 
+    public static readonly StyledProperty<object?> ResetOnProperty =
+        AvaloniaProperty.Register<ZoomPanel, object?>(nameof(ResetOn));
+
+    // Anything that means "a different picture", such as the bitmap a child shows through a Viewbox.
+    public object? ResetOn
+    {
+        get => GetValue(ResetOnProperty);
+        set => SetValue(ResetOnProperty, value);
+    }
+
     public void Reset()
     {
         zoom = 1;
@@ -55,6 +66,11 @@ public class ZoomPanel : Decorator
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == ResetOnProperty)
+        {
+            Reset();
+        }
+
         if (change.Property == ChildProperty)
         {
             if (change.OldValue is Image oldImage)

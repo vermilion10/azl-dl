@@ -46,19 +46,33 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         return File.Exists(target) ? target : throw new FileNotFoundException($"Extracting {painting} produced no painting.");
     }
 
-    // False when the painting isn't on disk, or was extracted before layered paintings were stacked (its prefab has
-    // layers but no layout was written next to it).
+    // False when the painting isn't on disk, or was extracted without its prefab's layout (before layers were stacked
+    // and faces placed). Such paintings are extracted again, which also downloads the prefab and any layers.
     public bool IsPaintingCurrent(string painting)
     {
         var target = PaintingPath(painting);
-        if (!File.Exists(target))
+        return File.Exists(target) && File.Exists(PaintingComposer.LayoutPath(target));
+    }
+
+    public string FaceFolder(string painting) => FolderFor("paintingface/" + painting);
+
+    // Downloads a painting's expression faces. Returns the folder, or null when the painting has none. A painting
+    // without faces gets an empty folder, so the game's servers aren't asked again.
+    public async Task<string?> FetchFacesAsync(string painting, CancellationToken cancellationToken = default)
+    {
+        var folder = FaceFolder(painting);
+        if (Directory.Exists(folder))
         {
-            return false;
+            return Directory.EnumerateFiles(folder, "*.png").Any() ? folder : null;
         }
 
-        var prefab = Path.Combine(AssetFolder, "painting", painting);
-        return File.Exists(PaintingComposer.LayoutPath(target)) || !File.Exists(prefab)
-               || PaintingComposer.ReadLayers(prefab).Count < 2;
+        var found = await FetchBundleAsync(AssetCategory.Azl, "paintingface/" + painting, cancellationToken);
+        if (found is null)
+        {
+            Directory.CreateDirectory(folder);
+        }
+
+        return found;
     }
 
     // Returns the extracted folder, or null when the game has no such bundle (a skin without a Live2D model, say).

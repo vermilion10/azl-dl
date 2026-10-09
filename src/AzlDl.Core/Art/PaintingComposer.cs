@@ -8,6 +8,27 @@ namespace AzlDl.Core.Art;
 // (UI units, y up, X/Y the lower-left corner). Layers are listed back to front.
 public sealed record PaintingLayer(string Name, double X, double Y, double Width, double Height);
 
+// A painting prefab's images, back to front, and the rectangle its expression faces are drawn in (null when the
+// painting has no face slot). Faces live in paintingface/<name> as textures named after the expression.
+public sealed record PaintingLayout(IReadOnlyList<PaintingLayer> Layers, PaintingLayer? Face);
+
+// A rectangle in the written PNG's pixels, measured from its top-left corner.
+public sealed record PixelRect(double X, double Y, double Width, double Height);
+
+// What is written next to a painting PNG as <name>.layout.json: the image size, the layers stacked into it, and
+// where the face slot sits in it.
+public sealed record PaintingLayoutFile(int Width, int Height, double PixelsPerUnit, IReadOnlyList<string> Layers, PixelRect? Face);
+
+// The stacked image and how prefab units map onto it.
+public sealed record PlacedPainting(RgbaImage Image, double MinX, double MinY, double PixelsPerUnit)
+{
+    public PixelRect ToPixels(PaintingLayer rect) => new(
+        Math.Round((rect.X - MinX) * PixelsPerUnit, 2),
+        Math.Round(Image.Height - ((rect.Y - MinY + rect.Height) * PixelsPerUnit), 2),
+        Math.Round(rect.Width * PixelsPerUnit, 2),
+        Math.Round(rect.Height * PixelsPerUnit, 2));
+}
+
 // Some paintings are several images stacked by their prefab: a background, the character (<name>_rw), and sometimes
 // foreground or extra background pieces (<name>_front, <name>_bj). painting/<name> holds the prefab; each layer is a
 // MeshImage on a RectTransform, named after the painting texture it shows (painting/<layer>_tex). The composer reads
@@ -19,9 +40,13 @@ public static class PaintingComposer
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public static string LayoutPath(string paintingPng) => Path.ChangeExtension(paintingPng, ".layers.json");
+    public const string FaceObjectName = "face";
 
-    public static IReadOnlyList<PaintingLayer> ReadLayers(string prefabBundle)
+    public static string LayoutPath(string paintingPng) => Path.ChangeExtension(paintingPng, ".layout.json");
+
+    public static IReadOnlyList<PaintingLayer> ReadLayers(string prefabBundle) => ReadLayout(prefabBundle).Layers;
+
+    public static PaintingLayout ReadLayout(string prefabBundle)
     {
         var manager = new AssetsManager();
         try
@@ -33,7 +58,7 @@ public static class PaintingComposer
                 .Select(i => i.PathId).FirstOrDefault();
             if (meshImage == 0)
             {
-                return [];
+                return new PaintingLayout([], null);
             }
 
             // GameObjects that draw a painting image.
@@ -55,13 +80,18 @@ public static class PaintingComposer
             var transforms = prefab.file.GetAssetsOfType(AssetClassID.RectTransform)
                 .ToDictionary(i => i.PathId, i => manager.GetBaseField(prefab, i));
             var layers = new List<PaintingLayer>();
+            PaintingLayer? face = null;
 
             // parent: the parent's rect in its own space (pivot at the origin); offset and scale map that space to the root's.
             void Visit(AssetTypeValueField node, (double X, double Y, double W, double H)? parent, double offsetX, double offsetY, double scale)
             {
                 var gameObjectId = node["m_GameObject.m_PathID"].AsLong;
                 var gameObject = manager.GetBaseField(prefab, prefab.file.GetAssetInfo(gameObjectId));
-                if (!gameObject["m_IsActive"].AsBool)
+                var name = gameObject["m_Name"].AsString;
+
+                // The face slot is switched off in the prefab; the game turns it on when it shows an expression.
+                var isFace = name == FaceObjectName && parent is not null;
+                if (!gameObject["m_IsActive"].AsBool && !isFace)
                 {
                     return;
                 }
@@ -92,10 +122,16 @@ public static class PaintingComposer
                 scale *= nodeScale;
                 var rect = (X: -pivot.X * size.X, Y: -pivot.Y * size.Y, W: size.X, H: size.Y);
 
+                var placed = new PaintingLayer(name, offsetX + (scale * rect.X), offsetY + (scale * rect.Y), scale * rect.W, scale * rect.H);
+                if (isFace)
+                {
+                    face ??= placed;
+                    return;
+                }
+
                 if (drawn.Contains(gameObjectId))
                 {
-                    layers.Add(new PaintingLayer(gameObject["m_Name"].AsString,
-                        offsetX + (scale * rect.X), offsetY + (scale * rect.Y), scale * rect.W, scale * rect.H));
+                    layers.Add(placed);
                 }
 
                 foreach (var child in node["m_Children.Array"].Children)
@@ -112,7 +148,7 @@ public static class PaintingComposer
                 Visit(root, null, 0, 0, 1);
             }
 
-            return layers;
+            return new PaintingLayout(layers, face);
         }
         finally
         {
@@ -120,9 +156,15 @@ public static class PaintingComposer
         }
     }
 
-    // Stacks the layers onto one canvas covering all of them.
-    public static RgbaImage Compose(IReadOnlyList<(PaintingLayer Layer, RgbaImage Image)> layers)
+    // Stacks the layers onto one canvas covering all of them. A single layer is used as it is.
+    public static PlacedPainting Compose(IReadOnlyList<(PaintingLayer Layer, RgbaImage Image)> layers)
     {
+        if (layers.Count == 1)
+        {
+            var (only, image) = layers[0];
+            return new PlacedPainting(image, only.X, only.Y, image.Width / only.Width);
+        }
+
         var minX = layers.Min(l => l.Layer.X);
         var minY = layers.Min(l => l.Layer.Y);
         var width = layers.Max(l => l.Layer.X + l.Layer.Width) - minX;
@@ -138,11 +180,27 @@ public static class PaintingComposer
                 layer.Width * pixelsPerUnit, layer.Height * pixelsPerUnit);
         }
 
-        return canvas;
+        return new PlacedPainting(canvas, minX, minY, pixelsPerUnit);
     }
 
-    public static void WriteLayout(string path, IReadOnlyList<PaintingLayer> layers) =>
-        File.WriteAllText(path, JsonSerializer.Serialize(layers, Json));
+    public static void WriteLayout(string path, PlacedPainting placed, PaintingLayout layout) =>
+        File.WriteAllText(path, JsonSerializer.Serialize(new PaintingLayoutFile(
+            placed.Image.Width, placed.Image.Height, Math.Round(placed.PixelsPerUnit, 5),
+            layout.Layers.Select(l => l.Name).ToList(),
+            layout.Face is null ? null : placed.ToPixels(layout.Face)), Json));
+
+    public static PaintingLayoutFile? ReadLayoutFile(string paintingPng)
+    {
+        var path = LayoutPath(paintingPng);
+        try
+        {
+            return File.Exists(path) ? JsonSerializer.Deserialize<PaintingLayoutFile>(File.ReadAllText(path), Json) : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static (double X, double Y) Vec(AssetTypeValueField field) =>
         field.IsDummy ? (0, 0) : (field["x"].AsFloat, field["y"].AsFloat);

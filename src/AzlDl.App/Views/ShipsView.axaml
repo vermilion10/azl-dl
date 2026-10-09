@@ -54,10 +54,31 @@
             <!-- Painting -->
             <Panel IsVisible="{Binding ShowsPainting}">
               <DockPanel IsVisible="{Binding PaintingShown}">
-                <TextBlock DockPanel.Dock="Bottom" Classes="muted" FontSize="13" Margin="0,12,0,0" HorizontalAlignment="Right"
-                           Text="Scroll to zoom · drag to move · double-click to reset" />
-                <controls:ZoomPanel AutomationProperties.Name="Painting. Plus and minus zoom, arrow keys move, 0 resets.">
-                  <Image Source="{Binding Painting}" Stretch="Uniform" />
+                <Grid DockPanel.Dock="Bottom" Margin="0,12,0,0" ColumnDefinitions="Auto,*,Auto">
+                  <TextBlock Classes="muted" Text="Expression" VerticalAlignment="Center" Margin="0,0,10,0"
+                             IsVisible="{Binding HasFaces}" />
+                  <ComboBox Grid.Column="1" ItemsSource="{Binding Faces}" SelectedItem="{Binding SelectedFace}" MaxWidth="460"
+                            HorizontalAlignment="Left" IsVisible="{Binding HasFaces}" Margin="0,0,16,0"
+                            AutomationProperties.Name="Expression">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:FaceOption">
+                        <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <TextBlock Grid.Column="2" Classes="muted" FontSize="13" VerticalAlignment="Center"
+                             Text="Scroll to zoom · drag to move · double-click to reset" />
+                </Grid>
+                <controls:ZoomPanel ResetOn="{Binding Painting}"
+                                    AutomationProperties.Name="Painting. Plus and minus zoom, arrow keys move, 0 resets.">
+                  <!-- The face is drawn over the painting in the painting's own pixels, so both scale together. -->
+                  <Viewbox Stretch="Uniform">
+                    <Canvas Width="{Binding PaintingWidth}" Height="{Binding PaintingHeight}">
+                      <Image Source="{Binding Painting}" Width="{Binding PaintingWidth}" Height="{Binding PaintingHeight}" />
+                      <Image Source="{Binding Face}" Canvas.Left="{Binding FaceSlot.X}" Canvas.Top="{Binding FaceSlot.Y}"
+                             Width="{Binding FaceSlot.Width}" Height="{Binding FaceSlot.Height}" Stretch="Fill" />
+                    </Canvas>
+                  </Viewbox>
                 </controls:ZoomPanel>
               </DockPanel>
               <StackPanel IsVisible="{Binding !PaintingShown}" HorizontalAlignment="Center" VerticalAlignment="Center"

@@ -309,7 +309,7 @@ public class StyleTests
         var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
         Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
 
-        var layout = Path.Combine(dataFolder!, "art", "painting", "wuerlixi_4.layers.json");
+        var layout = Path.Combine(dataFolder!, "art", "painting", "wuerlixi_4.layout.json");
         File.Delete(layout);
         var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
         await ships.LoadAsync();
@@ -320,8 +320,39 @@ public class StyleTests
         await WaitUntil(() => ships.PaintingState is PaintingState.Shown or PaintingState.Failed && File.Exists(layout));
 
         Assert.Equal(PaintingState.Shown, ships.PaintingState);
-        var layers = System.Text.Json.JsonDocument.Parse(File.ReadAllText(layout)).RootElement;
-        Assert.Equal(["wuerlixi_4", "wuerlixi_4_rw"], layers.EnumerateArray().Select(l => l.GetProperty("name").GetString()));
+        var layers = System.Text.Json.JsonDocument.Parse(File.ReadAllText(layout)).RootElement.GetProperty("layers");
+        Assert.Equal(["wuerlixi_4", "wuerlixi_4_rw"], layers.EnumerateArray().Select(l => l.GetString()));
+    }
+
+    // Enterprise's "Soaring Wings of Freedom" has two expression faces; picking one draws it in the painting's face slot.
+    [AvaloniaFact]
+    public async Task Painting_shows_expression_faces()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.PortMenu, Theme = ThemeMode.Dark, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        var ships = main.Ships;
+        await ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedShip = ships.Ships.First(s => s.Skins.Any(k => k.Painting == "qiye_5"));
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip.Skins.Single(k => k.Painting == "qiye_5");
+        await WaitUntil(() => ships.HasFaces || ships.PaintingState == PaintingState.Failed);
+
+        Assert.True(ships.HasFaces, ships.PaintingMessage);
+        Assert.Equal(["", "1", "2"], ships.Faces.Select(f => f.Name));
+        ships.SelectedFace = ships.Faces.Single(f => f.Name == "2");
+        Dispatcher.UIThread.RunJobs();
+        Assert.NotNull(ships.Face);
+        Assert.Equal(118, ships.FaceSlot.Width, 0);
+        SaveFrame(window, "ships-face-PortMenu-Dark.png");
+        window.Close();
     }
 
     // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.

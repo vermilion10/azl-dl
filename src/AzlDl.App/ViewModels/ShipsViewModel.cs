@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia;
 using Avalonia.Media.Imaging;
 using AzlDl.App.Settings;
 using AzlDl.Core;
@@ -38,6 +39,9 @@ public enum ViewerState
 }
 
 public sealed record StageOption(StageMode Mode, string Title);
+
+// An expression face for the painting; Name is empty for the painting without a face.
+public sealed record FaceOption(string Name, string Title);
 
 public enum PaintingState
 {
@@ -127,6 +131,30 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     [ObservableProperty]
     private Bitmap? painting;
+
+    // The painting's pixel size and its face slot, from the layout written next to it.
+    [ObservableProperty]
+    private double paintingWidth;
+
+    [ObservableProperty]
+    private double paintingHeight;
+
+    [ObservableProperty]
+    private Rect faceSlot;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasFaces))]
+    private string? faceFolder;
+
+    public bool HasFaces => FaceFolder is not null && Faces.Count > 1;
+
+    public ObservableCollection<FaceOption> Faces { get; } = [];
+
+    [ObservableProperty]
+    private FaceOption? selectedFace;
+
+    [ObservableProperty]
+    private Bitmap? face;
 
     [ObservableProperty]
     private string paintingMessage = "";
@@ -345,6 +373,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         }
 
         Painting = null;
+        ClearFaces();
         if (skin is null)
         {
             PaintingState = PaintingState.NotDownloaded;
@@ -355,8 +384,17 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         var path = fetcher.PaintingPath(skin.Painting);
         if (fetcher.IsPaintingCurrent(skin.Painting))
         {
-            Painting = new Bitmap(path);
+            var bitmap = new Bitmap(path);
+            var layout = PaintingComposer.ReadLayoutFile(path);
+            PaintingWidth = bitmap.Size.Width;
+            PaintingHeight = bitmap.Size.Height;
+            Painting = bitmap;
             PaintingState = PaintingState.Shown;
+            if (layout?.Face is { } slot)
+            {
+                FaceSlot = new Rect(slot.X, slot.Y, slot.Width, slot.Height);
+                _ = LoadFacesAsync(skin);
+            }
         }
         else if (File.Exists(path))
         {
@@ -368,6 +406,56 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             PaintingState = PaintingState.NotDownloaded;
             PaintingMessage = $"Painting {skin.Painting} isn't downloaded yet.";
         }
+    }
+
+    private void ClearFaces()
+    {
+        FaceFolder = null;
+        Faces.Clear();
+        SelectedFace = null;
+        Face = null;
+    }
+
+    // Lists the painting's expression faces, downloading them the first time. Each is labelled with the voice lines
+    // the game shows it with (ship_skin_expression). Without faces the picker stays hidden.
+    private async Task LoadFacesAsync(SkinInfo skin)
+    {
+        string? folder;
+        try
+        {
+            folder = await Task.Run(() => Fetcher().FetchFacesAsync(skin.Painting));
+        }
+        catch (Exception e) when (e is IOException or HttpRequestException or InvalidDataException
+                                      or System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            folder = null;
+        }
+
+        if (SelectedSkin != skin || folder is null || SelectedShip is not { } ship || catalog is null)
+        {
+            return;
+        }
+
+        var labels = catalog.AnimationLabels(ship, skin, dynamicSkin: true);
+        var names = Directory.EnumerateFiles(folder, "*.png").Select(Path.GetFileNameWithoutExtension).OfType<string>()
+            .OrderBy(n => int.TryParse(n, out var number) ? number : int.MaxValue).ThenBy(n => n, StringComparer.Ordinal);
+        Faces.Clear();
+        Faces.Add(new FaceOption("", "Default"));
+        foreach (var name in names)
+        {
+            Faces.Add(new FaceOption(name, labels.TryGetValue(name, out var label) ? $"{name} · {label}" : name));
+        }
+
+        FaceFolder = folder;
+        OnPropertyChanged(nameof(HasFaces));
+        SelectedFace = Faces[0];
+    }
+
+    partial void OnSelectedFaceChanged(FaceOption? value)
+    {
+        Face = value is { Name.Length: > 0 } && FaceFolder is { } folder && File.Exists(Path.Combine(folder, value.Name + ".png"))
+            ? new Bitmap(Path.Combine(folder, value.Name + ".png"))
+            : null;
     }
 
     [RelayCommand]
