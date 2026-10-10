@@ -334,7 +334,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         return server;
     }
 
-    // The viewer page takes the current style's stage, ink and muted colors so it matches the window.
+    // The viewer page takes the current style's stage, ink, muted and accent colors so it matches the window.
     private static string ThemeColors()
     {
         string Hex(string key)
@@ -346,7 +346,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
                 : "";
         }
 
-        return $"bg={Hex("StageBrush")}&ink={Hex("InkBrush")}&muted={Hex("MutedBrush")}";
+        return $"bg={Hex("StageBrush")}&ink={Hex("InkBrush")}&muted={Hex("MutedBrush")}&accent={Hex("AccentBrush")}&accentInk={Hex("AccentInkBrush")}";
     }
 
     private void ApplyFilter()

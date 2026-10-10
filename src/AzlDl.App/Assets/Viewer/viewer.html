@@ -6,52 +6,66 @@
 <title>azl-dl viewer</title>
 <!-- Plays Spine rigs (chibis, dynamic skins) and Live2D models from the local data folder.
      Query: kind=spine&skel=…&atlas=…, kind=layers&layout=… (a dynamic skin's layers.json) or kind=live2d&model=…,
-     plus bg, ink and muted colors (hex, no #), labels: JSON of animation name -> the voice lines that use it, and for
-     interactive Live2D skins idles: JSON of action motion -> the idle motion the model keeps playing after it.
+     plus bg, ink, muted, accent and accentInk colors (hex, no #), labels: JSON of animation name -> the voice lines
+     that use it, voices: JSON of animation name -> the URL of the voice line it plays with, and for interactive Live2D
+     skins idles: JSON of action motion -> the idle motion the model keeps playing after it.
      The runtimes are not part of azl-dl; the app downloads them into <data>/runtimes on first use. -->
 <style>
-  :root { --bg: #e2e9ee; --ink: #14263a; --muted: #475a6c; }
+  :root { --bg: #e2e9ee; --ink: #14263a; --muted: #475a6c; --accent: #14263a; --accent-ink: #ffffff; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
     font: 14px/1.4 system-ui, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #view { position: relative; flex: 1; min-height: 0; }
   #stage { position: absolute; inset: 0; cursor: grab; touch-action: none; }
   #stage:active { cursor: grabbing; }
   #stage:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
   #stage canvas { display: block; width: 100%; height: 100%; }
-  #bar { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; flex-wrap: wrap; gap: 8px 20px;
-    align-items: center; pointer-events: none; }
-  #bar > * { pointer-events: auto; }
-  #bar label { color: var(--muted); margin-right: 8px; }
-  #bar select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--muted);
-    padding: 6px 8px; min-height: 36px; max-width: min(460px, 80vw); }
-  #bar select:focus-visible, #bar button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  #bar button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--muted);
-    padding: 6px 12px; min-height: 36px; cursor: pointer; }
-  #bar [hidden] { display: none; }
-  #hint { color: var(--muted); margin-left: auto; }
-  #idleState { color: var(--muted); }
   #message { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px;
     color: var(--muted); pointer-events: none; }
-  #message[hidden] { display: none; }
+  #message[hidden], #panel[hidden], [hidden] { display: none; }
+
+  #panel { border-top: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); padding: 12px 16px 14px; }
+  #now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  #nowName { font-weight: 600; }
+  #nowVoice, #idleState, #hint { color: var(--muted); }
+  #hint { margin-left: auto; font-size: 13px; }
+  #toggle { font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 1px solid var(--muted);
+    padding: 4px 10px; min-height: 32px; cursor: pointer; }
+  #groups { max-height: 34vh; overflow-y: auto; margin-top: 10px; scrollbar-color: var(--muted) transparent; }
+  .group { margin: 0 0 10px; }
+  .group h2 { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { font: inherit; font-size: 13px; color: var(--ink); background: transparent; cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--muted) 60%, transparent); padding: 5px 11px; min-height: 32px; }
+  .chips button:hover { border-color: var(--ink); }
+  .chips button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #panel button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 </style>
 </head>
 <body>
-<div id="stage" tabindex="0" aria-label="Model. Scroll or press plus and minus to zoom, drag or use the arrow keys to move, double-click or press 0 to reset."></div>
-<div id="bar">
-  <span id="motionGroup" hidden><label for="motion">Motion</label><select id="motion"></select></span>
-  <button id="replay" type="button" hidden>Play again</button>
-  <span id="idleState" hidden></span>
-  <span id="expressionGroup" hidden><label for="expression">Expression</label><select id="expression"></select></span>
-  <span id="hint">Scroll to zoom · drag to move · double-click to reset</span>
+<div id="view">
+  <div id="stage" tabindex="0" aria-label="Model. Scroll or press plus and minus to zoom, drag or use the arrow keys to move, double-click or press 0 to reset."></div>
+  <div id="message">Loading…</div>
 </div>
-<div id="message">Loading…</div>
+<section id="panel" hidden aria-label="Animations">
+  <div id="now">
+    <span><span id="nowName"></span></span>
+    <span id="nowVoice"></span>
+    <span id="idleState" hidden></span>
+    <span id="hint">Scroll to zoom · drag to move · double-click to reset</span>
+    <button id="toggle" type="button" aria-expanded="true" aria-controls="groups">Hide</button>
+  </div>
+  <div id="groups"></div>
+</section>
 <script>
   const query = new URLSearchParams(location.search);
-  for (const [name, key] of [["--bg", "bg"], ["--ink", "ink"], ["--muted", "muted"]]) {
+  for (const [name, key] of [["--bg", "bg"], ["--ink", "ink"], ["--muted", "muted"], ["--accent", "accent"], ["--accent-ink", "accentInk"]]) {
     if (/^[0-9a-fA-F]{6}$/.test(query.get(key) || "")) document.documentElement.style.setProperty(name, "#" + query.get(key));
   }
 
-  let labels = {};
-  try { labels = JSON.parse(query.get("labels") || "{}"); } catch { labels = {}; }
+  const json = (key) => { try { return JSON.parse(query.get(key) || "{}"); } catch { return {}; } };
+  const labels = json("labels");
+  const voices = json("voices");
 
   const stage = document.getElementById("stage");
   const message = document.getElementById("message");
@@ -67,18 +81,104 @@
     });
   }
 
-  // "1 · Main screen 1, Touch" when the game plays this animation with voice lines, else the plain name.
-  const describe = (name) => labels[name] ? `${name} · ${labels[name]}` : name;
+  // Readable names for the game's animation names.
+  const names = {
+    Idle: "Default", normal: "Idle", normal2: "Idle 2", stand: "Stand", stand2: "Stand 2", sit: "Sit", sleep: "Sleep",
+    walk: "Walk", move: "Move", move_left: "Move left", motou: "Head pat", dance: "Dance", wash: "Bath", yun: "Dizzy",
+    attack: "Attack", attack_left: "Attack left", skill: "Skill", victory: "Victory", dead: "Defeated",
+    touch: "Touch", tuozhuai: "Dragged", tuozhuai2: "Dragged 2",
+    touch_body: "Touch", touch_head: "Head pat", touch_special: "Special touch",
+    login: "Log in", home: "Return to port", mail: "Mail", mission: "Mission", mission_complete: "Mission complete",
+    complete: "Commission complete", wedding: "Pledge", effect: "Effect", detail: "Details",
+  };
+  const readable = (name) => names[name]
+    ?? name.replace(/^idle(\d+)$/, "Idle pose $1").replace(/^main_?(\d+)$/, "Main line $1")
+      .replace(/^touch_idle(\d+)$/, "Interaction $1").replace(/^touch_drag(\d+)$/, "Drag $1")
+      .replace(/^(\d+)$/, "Expression $1").replace(/_/g, " ");
 
-  function fill(id, names, chosen, play, none) {
-    const select = document.getElementById(id);
-    select.replaceChildren();
-    if (none) select.add(new Option(none, ""));
-    for (const name of names) select.add(new Option(describe(name), name));
-    select.value = chosen;
-    select.onchange = () => play(select.value);
-    document.getElementById(id + "Group").hidden = names.length < (none ? 1 : 2);
-  }
+  // Groups, in the order shown. The first group whose test matches an animation takes it.
+  const sections = {
+    live2d: [
+      ["Idle poses", (n) => /^(Idle|idle\d+)$/.test(n)],
+      ["Main lines", (n) => /^main_\d+$/.test(n)],
+      ["Touch", (n) => /^touch_(body|head|special)/.test(n)],
+      ["Interactions", (n) => /^touch_(idle|drag)\d+$/.test(n)],
+      ["Events", () => true],
+    ],
+    spine: [
+      ["Idle", (n) => /^(normal|stand|sit|sleep|yun)/.test(n)],
+      ["Moving", (n) => /^(walk|move|motou|dance|wash)/.test(n)],
+      ["Battle", (n) => /^(attack|skill|victory|dead)/.test(n)],
+      ["Touch", (n) => /^(touch|tuozhuai)/.test(n)],
+      ["Other", () => true],
+    ],
+  };
+
+  // The panel under the model: what is playing, and one button per animation, grouped.
+  const panel = {
+    current: {},
+    showNow(name) {
+      document.getElementById("nowName").textContent = readable(name);
+      document.getElementById("nowVoice").textContent = labels[name] ? "Plays with " + labels[name] : "";
+    },
+    build(groups) {
+      const container = document.getElementById("groups");
+      container.replaceChildren();
+      for (const { title, items, selected, play } of groups) {
+        if (items.length === 0) continue;
+        const section = document.createElement("div");
+        section.className = "group";
+        const heading = document.createElement("h2");
+        heading.textContent = title;
+        const chips = document.createElement("div");
+        chips.className = "chips";
+        chips.setAttribute("role", "group");
+        chips.setAttribute("aria-label", title);
+        for (const item of items) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = item.text ?? readable(item.name);
+          button.title = [item.name, labels[item.name]].filter(Boolean).join(" · ");
+          button.dataset.name = item.name;
+          button.dataset.track = selected;
+          button.setAttribute("aria-pressed", String(panel.current[selected] === item.name));
+          button.onclick = () => play(item.name);
+          chips.appendChild(button);
+        }
+
+        section.append(heading, chips);
+        container.appendChild(section);
+      }
+
+      document.getElementById("panel").hidden = container.childElementCount === 0;
+    },
+    // Marks name as the current one of its track ("motion" or "expression").
+    select(track, name) {
+      panel.current[track] = name;
+      for (const button of document.querySelectorAll(`#groups button[data-track="${track}"]`)) {
+        button.setAttribute("aria-pressed", String(button.dataset.name === name));
+      }
+    },
+  };
+
+  const toggle = document.getElementById("toggle");
+  const setOpen = (open) => {
+    document.getElementById("groups").hidden = !open;
+    toggle.textContent = open ? "Hide" : "Show animations";
+    toggle.setAttribute("aria-expanded", String(open));
+    try { localStorage.setItem("animationsOpen", open ? "1" : "0"); } catch { /* storage may be unavailable */ }
+  };
+  toggle.onclick = () => setOpen(document.getElementById("groups").hidden);
+  try { if (localStorage.getItem("animationsOpen") === "0") setOpen(false); } catch { /* storage may be unavailable */ }
+
+  // The voice line an animation plays with, when the app passed one.
+  const audio = new Audio();
+  const speak = (name) => {
+    audio.pause();
+    if (!voices[name]) return;
+    audio.src = voices[name];
+    audio.play().catch(() => {});
+  };
 
   // Wheel, drag, double-click and keyboard pan/zoom. view.zoom 1 fits the model; view.x/y shift it in screen pixels.
   const view = { zoom: 1, x: 0, y: 0 };
@@ -121,6 +221,16 @@
       if (keys[e.key]) { e.preventDefault(); keys[e.key](); }
     });
   }
+
+  // Splits names into the sections' groups; each name goes to the first group whose test it passes.
+  const byGroup = (all, rules) => {
+    const taken = new Set();
+    return rules.map(([title, test]) => {
+      const items = all.filter((n) => !taken.has(n) && test(n));
+      items.forEach((n) => taken.add(n));
+      return { title, items };
+    });
+  };
 
   // Expressions are poses with no length that only swap attachments (faces); the game plays them over the idle
   // motion instead of in place of it.
@@ -182,11 +292,14 @@
     const idle = [layout[0].animation, "normal", "stand"].find((n) => motions.includes(n)) || motions[0];
 
     // A layer without the chosen motion keeps its idle one, so a background-only motion doesn't freeze the character.
-    const playMotion = (name) => {
+    const playMotion = (name, quiet) => {
       for (const { skeleton, state } of layers) {
         const own = skeleton.data.findAnimation(name) ? name : [idle, "normal"].find((n) => skeleton.data.findAnimation(n));
         if (own) state.setAnimation(0, own, true);
       }
+      panel.select("motion", name);
+      panel.showNow(name);
+      if (!quiet) speak(name);
     };
     const playExpression = (name) => {
       for (const { skeleton, state } of layers) {
@@ -194,10 +307,22 @@
         if (found && isExpression(found)) state.setAnimation(1, name, true);
         else state.setEmptyAnimation(1, 0);
       }
+      panel.select("expression", name);
+      panel.showNow(name || panel.current.motion);
+      if (name) speak(name);
     };
-    if (idle) playMotion(idle);
-    fill("motion", motions, idle || "", playMotion);
-    fill("expression", expressions, "", playExpression, "Default");
+
+    const motionGroups = expressions.length > 0
+      ? [{ title: "Motions", items: motions }]
+      : byGroup(motions, sections.spine);
+    panel.build([
+      ...motionGroups.map((g) => ({ ...g, items: g.items.map((name) => ({ name })), selected: "motion", play: playMotion })),
+      { title: "Expressions", items: [{ name: "", text: "Default" }, ...expressions.map((name) => ({ name }))],
+        selected: "expression", play: playExpression },
+    ].filter((g) => g.selected !== "expression" || expressions.length > 0));
+    panel.current.expression = "";
+    panel.select("expression", "");
+    if (idle) playMotion(idle, true);
 
     // Frame the union of the layers' bounds in the starting pose.
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -241,7 +366,7 @@
     };
     requestAnimationFrame(frame);
     interact(() => {});
-    window.viewer = { layers, drawFrame, view, motions, expressions };
+    window.viewer = { layers, drawFrame, view, motions, expressions, playMotion, playExpression };
     message.hidden = true;
   }
 
@@ -264,7 +389,8 @@
     await load("/runtimes/pixi.min.js");
     await load("/runtimes/cubism4.min.js");
 
-    const app = new PIXI.Application({ backgroundAlpha: 0, resizeTo: window, antialias: true,
+    const area = document.getElementById("view");
+    const app = new PIXI.Application({ backgroundAlpha: 0, resizeTo: area, antialias: true,
       resolution: window.devicePixelRatio || 1, autoDensity: true });
     stage.appendChild(app.view);
 
@@ -277,23 +403,26 @@
       model.y = (app.screen.height - model.height) / 2 + view.y;
     };
     place();
-    window.addEventListener("resize", place);
+    new ResizeObserver(() => { app.resize(); place(); }).observe(area);
     interact(place);
 
-    // Motions play once, then the model goes back to its idle motion; "Play again" repeats the chosen one. On
-    // interactive skins some actions leave the model in another idle (idles), and picking an idle motion keeps it.
-    let idles = {};
-    try { idles = JSON.parse(query.get("idles") || "{}"); } catch { idles = {}; }
-    const groups = Object.keys(model.internalModel.settings.motions || {});
+    // Motions play once, then the model goes back to its idle motion; clicking a motion again replays it. On
+    // interactive skins some actions leave the model in another idle (idles), and picking an idle pose keeps it.
+    const idles = json("idles");
+    const groups = Object.keys(model.internalModel.settings.motions || {})
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const idle = groups.includes("Idle") ? "Idle" : groups[0];
     const groupOf = (clip) => clip === "idle" ? "Idle" : clip;
     const isIdle = (name) => /^(Idle|idle\d+)$/.test(name);
     const motions = model.internalModel.motionManager;
     const idleState = document.getElementById("idleState");
+    labels.Idle ??= labels.idle;
+    voices.Idle ??= voices.idle;
     const setIdle = (name) => {
       motions.groups.idle = name;
       idleState.hidden = name === idle;
-      idleState.textContent = "Idling in " + describe(name);
+      idleState.textContent = "Current idle: " + readable(name);
+      panel.select("idle", name);
     };
     let pending = null;
     motions.on("motionFinish", () => {
@@ -301,16 +430,22 @@
       pending = null;
     });
     const play = (name) => {
-      if (!name) return;
       if (isIdle(name)) setIdle(name);
+      else panel.select("idle", motions.groups.idle);
+      panel.select("motion", name);
+      panel.showNow(name);
       pending = name;
       model.motion(name, 0, 3);
+      speak(name);
     };
-    labels.Idle ??= labels.idle;
-    fill("motion", groups, idle || "", play);
-    const replay = document.getElementById("replay");
-    replay.hidden = groups.length < 2;
-    replay.onclick = () => play(document.getElementById("motion").value);
+
+    const grouped = byGroup(groups, sections.live2d);
+    panel.build(grouped.map((g) => ({
+      ...g, items: g.items.map((name) => ({ name })), selected: g.title === "Idle poses" ? "idle" : "motion", play,
+    })));
+    panel.select("idle", idle);
+    panel.showNow(idle);
+    window.viewer.play = play;
     message.hidden = true;
   }
 
