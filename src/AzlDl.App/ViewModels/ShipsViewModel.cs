@@ -306,6 +306,10 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
                 var set = mode switch { StageMode.Chibi => AnimationSet.Chibi, StageMode.Dynamic => AnimationSet.Expression, _ => AnimationSet.Live2D };
                 var labels = catalog.AnimationLabels(ship, skin, set);
                 query += "&labels=" + Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(labels));
+                if (mode == StageMode.Live2D && catalog.Live2DIdleAfter(skin) is { Count: > 0 } idles)
+                {
+                    query += "&idles=" + Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(idles));
+                }
             }
 
             ViewerUrl = Server().UrlFor($"/viewer.html?{query}&{ThemeColors()}");

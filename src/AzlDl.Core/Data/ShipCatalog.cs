@@ -66,11 +66,13 @@ public sealed class ShipCatalog
     private readonly IReadOnlyDictionary<string, string> chibiActions;
     private readonly IReadOnlyDictionary<string, string> live2DActions;
     private readonly JsonObject expressions;
+    private readonly IReadOnlyDictionary<long, IReadOnlyDictionary<string, string>> live2DIdles;
 
     public IReadOnlyList<ShipInfo> Ships { get; }
 
     private ShipCatalog(IReadOnlyList<ShipInfo> ships, JsonObject words, IReadOnlyList<(string Key, string Label)> voiceKeys,
-        IReadOnlyDictionary<string, string> chibiActions, IReadOnlyDictionary<string, string> live2DActions, JsonObject expressions)
+        IReadOnlyDictionary<string, string> chibiActions, IReadOnlyDictionary<string, string> live2DActions, JsonObject expressions,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<string, string>> live2DIdles)
     {
         Ships = ships;
         this.words = words;
@@ -78,6 +80,7 @@ public sealed class ShipCatalog
         this.chibiActions = chibiActions;
         this.live2DActions = live2DActions;
         this.expressions = expressions;
+        this.live2DIdles = live2DIdles;
     }
 
     // The tables the catalog needs, relative to the data folder.
@@ -127,6 +130,29 @@ public sealed class ShipCatalog
         // Per painting, the face (or dynamic skin expression) shown with each voice line. Older data folders lack it.
         var expressionFile = Path.Combine(dataFolder, "sharecfg/ship_skin_expression.json");
         var expressions = File.Exists(expressionFile) ? Read("sharecfg/ship_skin_expression.json") : [];
+
+        // Interactive Live2D skins: ship_l2d rows whose action leaves the model in another idle afterwards
+        // (action_trigger_active.idle N plays clip idleN from then on; 0 is the default idle).
+        var live2DIdles = new Dictionary<long, IReadOnlyDictionary<string, string>>();
+        if (File.Exists(Path.Combine(dataFolder, "sharecfg/ship_l2d.json")))
+        {
+            foreach (var row in Read("sharecfg/ship_l2d.json").Select(p => p.Value).OfType<JsonObject>())
+            {
+                if (row["action_trigger"] is JsonObject trigger && Text(trigger["action"]) is { Length: > 0 } action
+                    && row["action_trigger_active"] is JsonObject active && active["idle"]?.GetValueKind() == JsonValueKind.Number
+                    && row["ship_skin_id"]?.GetValueKind() == JsonValueKind.Number)
+                {
+                    var idle = Long(active["idle"]);
+                    var skinId = Long(row["ship_skin_id"]);
+                    if (!live2DIdles.TryGetValue(skinId, out var map))
+                    {
+                        live2DIdles[skinId] = map = new Dictionary<string, string>(StringComparer.Ordinal);
+                    }
+
+                    ((Dictionary<string, string>)map)[action] = idle == 0 ? "idle" : $"idle{idle}";
+                }
+            }
+        }
 
         string Tip(string key) => tips[key]?["tip"]?.GetValue<string>().Trim() ?? key;
 
@@ -208,7 +234,7 @@ public sealed class ShipCatalog
                 skinsByGroup.GetValueOrDefault(group) ?? []));
         }
 
-        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, live2DActions, expressions);
+        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, live2DActions, expressions, live2DIdles);
     }
 
     // A skin's voice lines. Skins only store the lines they change; the rest come from the ship's default skin, as
@@ -236,6 +262,10 @@ public sealed class ShipCatalog
 
         return lines;
     }
+
+    // For interactive Live2D skins: action clip -> the idle clip the model keeps playing after it.
+    public IReadOnlyDictionary<string, string> Live2DIdleAfter(SkinInfo skin) =>
+        live2DIdles.TryGetValue(skin.Id, out var map) ? map : new Dictionary<string, string>();
 
     // Animation name -> the voice lines the game plays it with, for this skin's lines only ("Main screen 1, Normal
     // touch"). Chibis use character_voice's spine_action and Live2D models its l2d_action; faces and dynamic skin

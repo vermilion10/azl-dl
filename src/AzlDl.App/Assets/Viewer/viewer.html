@@ -6,7 +6,8 @@
 <title>azl-dl viewer</title>
 <!-- Plays Spine rigs (chibis, dynamic skins) and Live2D models from the local data folder.
      Query: kind=spine&skel=…&atlas=…, kind=layers&layout=… (a dynamic skin's layers.json) or kind=live2d&model=…,
-     plus bg, ink and muted colors (hex, no #) and labels: JSON of animation name -> the voice lines that use it.
+     plus bg, ink and muted colors (hex, no #), labels: JSON of animation name -> the voice lines that use it, and for
+     interactive Live2D skins idles: JSON of action motion -> the idle motion the model keeps playing after it.
      The runtimes are not part of azl-dl; the app downloads them into <data>/runtimes on first use. -->
 <style>
   :root { --bg: #e2e9ee; --ink: #14263a; --muted: #475a6c; }
@@ -27,6 +28,7 @@
     padding: 6px 12px; min-height: 36px; cursor: pointer; }
   #bar [hidden] { display: none; }
   #hint { color: var(--muted); margin-left: auto; }
+  #idleState { color: var(--muted); }
   #message { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px;
     color: var(--muted); pointer-events: none; }
   #message[hidden] { display: none; }
@@ -37,6 +39,7 @@
 <div id="bar">
   <span id="motionGroup" hidden><label for="motion">Motion</label><select id="motion"></select></span>
   <button id="replay" type="button" hidden>Play again</button>
+  <span id="idleState" hidden></span>
   <span id="expressionGroup" hidden><label for="expression">Expression</label><select id="expression"></select></span>
   <span id="hint">Scroll to zoom · drag to move · double-click to reset</span>
 </div>
@@ -277,10 +280,32 @@
     window.addEventListener("resize", place);
     interact(place);
 
-    // Motions play once, then the model goes back to its Idle motion; "Play again" repeats the chosen one.
+    // Motions play once, then the model goes back to its idle motion; "Play again" repeats the chosen one. On
+    // interactive skins some actions leave the model in another idle (idles), and picking an idle motion keeps it.
+    let idles = {};
+    try { idles = JSON.parse(query.get("idles") || "{}"); } catch { idles = {}; }
     const groups = Object.keys(model.internalModel.settings.motions || {});
     const idle = groups.includes("Idle") ? "Idle" : groups[0];
-    const play = (name) => { if (name) model.motion(name, 0, 3); };
+    const groupOf = (clip) => clip === "idle" ? "Idle" : clip;
+    const isIdle = (name) => /^(Idle|idle\d+)$/.test(name);
+    const motions = model.internalModel.motionManager;
+    const idleState = document.getElementById("idleState");
+    const setIdle = (name) => {
+      motions.groups.idle = name;
+      idleState.hidden = name === idle;
+      idleState.textContent = "Idling in " + describe(name);
+    };
+    let pending = null;
+    motions.on("motionFinish", () => {
+      if (pending && idles[pending] && groups.includes(groupOf(idles[pending]))) setIdle(groupOf(idles[pending]));
+      pending = null;
+    });
+    const play = (name) => {
+      if (!name) return;
+      if (isIdle(name)) setIdle(name);
+      pending = name;
+      model.motion(name, 0, 3);
+    };
     labels.Idle ??= labels.idle;
     fill("motion", groups, idle || "", play);
     const replay = document.getElementById("replay");

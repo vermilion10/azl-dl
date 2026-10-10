@@ -392,6 +392,20 @@ public class StyleTests
         Assert.Contains("Main screen 1", labels.GetProperty("main_1").GetString());
     }
 
+    // Plymouth's interactive Live2D skin (pulimaosi_3): ship_l2d says which idle each action leaves her in.
+    [Fact]
+    public void Live2D_actions_name_their_next_idle()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+
+        var catalog = AzlDl.Core.Data.ShipCatalog.Load(dataFolder!);
+        var skin = catalog.Ships.SelectMany(s => s.Skins).First(k => k.Painting == "pulimaosi_3");
+        var idles = catalog.Live2DIdleAfter(skin);
+        Assert.Equal("idle14", idles["touch_idle23"]);
+        Assert.Equal("idle", idles["touch_idle4"]);
+    }
+
     // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.
     [AvaloniaFact]
     public async Task Asset_browser_previews_and_saves()
