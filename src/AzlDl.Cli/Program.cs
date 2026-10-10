@@ -41,6 +41,7 @@ public static class Program
         root.Subcommands.Add(BuildStoryCommand());
         root.Subcommands.Add(BuildShareCfgCommand());
         root.Subcommands.Add(BuildExtractCommand());
+        root.Subcommands.Add(BuildAudioCommand());
         root.Subcommands.Add(BuildUpdateCommand(regionOption));
 
         return await root.Parse(args).InvokeAsync();
@@ -168,6 +169,76 @@ public static class Program
             Console.Error.WriteLine(
                 $"{summary.Bundles} bundles: {summary.Paintings} paintings, {summary.Images} images, {summary.Files} files, {summary.Errors.Count} failed");
             return summary.Errors.Count > 0 ? 1 : 0;
+        });
+
+        return command;
+    }
+
+    private static Command BuildAudioCommand()
+    {
+        var filtersArgument = new Argument<string[]>("filters")
+        {
+            Description = "Case-insensitive substring filters on the bank path (e.g. cv-10706), AND-combined",
+            Arity = ArgumentArity.ZeroOrMore,
+        };
+
+        var assetsOption = new Option<string>("--assets")
+        {
+            Description = "Directory holding the downloaded files (the download command's --output)",
+            DefaultValueFactory = _ => Path.Combine("output", "AssetBundles"),
+        };
+
+        var outputOption = new Option<string>("--output")
+        {
+            Description = "Directory to write <bank>/<cue>.wav files into",
+            DefaultValueFactory = _ => Path.Combine("output", "audio"),
+        };
+
+        var command = new Command("audio", "Decode downloaded voice banks (cue/*.b, the Cv category) into WAV files, one per cue.");
+        command.Arguments.Add(filtersArgument);
+        command.Options.Add(assetsOption);
+        command.Options.Add(outputOption);
+
+        command.SetAction(parse =>
+        {
+            var cueFolder = Path.Combine(parse.GetValue(assetsOption)!, "cue");
+            var filters = parse.GetValue(filtersArgument) ?? [];
+            var banks = Directory.Exists(cueFolder)
+                ? Directory.EnumerateFiles(cueFolder, "*.b").Where(f => Matches("cue/" + Path.GetFileName(f), filters)).Order(StringComparer.Ordinal).ToList()
+                : [];
+            if (banks.Count == 0)
+            {
+                Console.Error.WriteLine($"No voice banks in {cueFolder} match. Download the Cv category first.");
+                return 1;
+            }
+
+            var output = parse.GetValue(outputOption)!;
+            int written = 0, failed = 0;
+            Parallel.ForEach(banks, new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 8) }, bank =>
+            {
+                try
+                {
+                    var acb = AzlDl.Core.Audio.AcbFile.Read(bank);
+                    var folder = Path.Combine(output, Path.GetFileNameWithoutExtension(bank));
+                    Directory.CreateDirectory(folder);
+                    foreach (var cue in acb.CueNames)
+                    {
+                        if (acb.ReadWav(cue) is { } wav)
+                        {
+                            File.WriteAllBytes(Path.Combine(folder, cue + ".wav"), wav);
+                            Interlocked.Increment(ref written);
+                        }
+                    }
+                }
+                catch (Exception e) when (e is InvalidDataException or IOException or ArgumentException or IndexOutOfRangeException)
+                {
+                    Interlocked.Increment(ref failed);
+                    Console.Error.WriteLine($"FAIL {Path.GetFileName(bank)}: {e.Message}");
+                }
+            });
+
+            Console.Error.WriteLine($"{banks.Count} banks: {written} voice lines, {failed} failed");
+            return failed > 0 ? 1 : 0;
         });
 
         return command;

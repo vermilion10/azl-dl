@@ -58,6 +58,14 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     private static bool NeedsMotions(string bundlePath, string folder) =>
         bundlePath.StartsWith("live2d/", StringComparison.Ordinal) && !Directory.Exists(Path.Combine(folder, ArtExtractor.MotionFolder));
 
+    // Downloads a ship group's voice banks (cue/cv-<group>.b and its -battle and -gift banks) when they aren't current.
+    // Returns how many banks the game has for the group.
+    public async Task<int> FetchVoiceBanksAsync(long shipGroup, CancellationToken cancellationToken = default)
+    {
+        var found = await FetchAsync(AssetCategory.Cv, AzlDl.Core.Audio.VoiceLibrary.BankPaths(shipGroup), cancellationToken, extract: false);
+        return found.Count;
+    }
+
     public string FaceFolder(string painting) => FolderFor("paintingface/" + painting);
 
     // Downloads a painting's expression faces. Returns the folder, or null when the painting has none. A painting

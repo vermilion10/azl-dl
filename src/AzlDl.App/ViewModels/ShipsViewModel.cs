@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Media.Imaging;
+using AzlDl.App.Audio;
 using AzlDl.App.Settings;
+using AzlDl.Core.Audio;
 using AzlDl.Core;
 using AzlDl.Core.Art;
 using AzlDl.App.Viewer;
@@ -164,6 +166,72 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     // The selected skin's voice lines (its own, with the default skin's for the rest).
     public ObservableCollection<VoiceLine> VoiceLines { get; } = [];
 
+    public bool CanPlayVoices => VoicePlayer.IsSupported;
+
+    // Downloading, missing recording or decode problems for the voice line buttons; empty when there is nothing to say.
+    [ObservableProperty]
+    private string voiceMessage = "";
+
+    private VoiceLibrary? voiceLibrary;
+    private string? voiceLibraryFolder;
+
+    private VoiceLibrary Voices()
+    {
+        var folder = Fetcher().AssetFolder;
+        if (voiceLibrary is null || voiceLibraryFolder != folder)
+        {
+            voiceLibrary = new VoiceLibrary(folder);
+            voiceLibraryFolder = folder;
+        }
+
+        return voiceLibrary;
+    }
+
+    // Downloads the ship's voice banks the first time; later calls use what is on disk.
+    private async Task EnsureVoiceBanksAsync(ShipInfo ship)
+    {
+        var fetcher = Fetcher();
+        if (!File.Exists(Path.Combine(fetcher.AssetFolder, VoiceLibrary.BankPaths(ship.GroupId)[0])))
+        {
+            await Task.Run(() => fetcher.FetchVoiceBanksAsync(ship.GroupId));
+        }
+    }
+
+    [RelayCommand]
+    private async Task PlayVoiceAsync(VoiceLine? line)
+    {
+        if (line is null || SelectedShip is not { } ship || SelectedSkin is not { } skin)
+        {
+            return;
+        }
+
+        VoiceMessage = "";
+        try
+        {
+            if (!File.Exists(Path.Combine(Fetcher().AssetFolder, VoiceLibrary.BankPaths(ship.GroupId)[0])))
+            {
+                VoiceMessage = $"Downloading {ship.Name}'s voice lines…";
+                await EnsureVoiceBanksAsync(ship);
+                VoiceMessage = "";
+            }
+
+            var library = Voices();
+            var wav = await Task.Run(() => library.Find(ship.GroupId, skin.GroupIndex, line.ResourceKey) is { } cue ? library.ReadWav(cue) : null);
+            if (wav is null)
+            {
+                VoiceMessage = $"The game has no recording of \"{line.Label}\" for this skin.";
+                return;
+            }
+
+            VoicePlayer.Play(wav);
+        }
+        catch (Exception e) when (e is IOException or HttpRequestException or InvalidDataException
+                                      or System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            VoiceMessage = $"Couldn't play \"{line.Label}\": {e.Message}";
+        }
+    }
+
     public string DataFolder => settings.DataFolder;
 
     // Set by the shell; shows the Sync section.
@@ -303,6 +371,12 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             };
             if (catalog is not null && SelectedShip is { } ship)
             {
+                query += await VoiceQueryAsync(ship, skin, mode);
+                if (SelectedSkin != skin || SelectedStage?.Mode != mode)
+                {
+                    return;
+                }
+
                 var set = mode switch { StageMode.Chibi => AnimationSet.Chibi, StageMode.Dynamic => AnimationSet.Expression, _ => AnimationSet.Live2D };
                 var labels = catalog.AnimationLabels(ship, skin, set);
                 query += "&labels=" + Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(labels));
@@ -321,6 +395,35 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             ViewerState = ViewerState.Failed;
             ViewerMessage = $"Couldn't get {bundle}: {e.Message}";
         }
+    }
+
+    // "&voices=" with each animation's first voice line that has a recording, as a URL the viewer page can play.
+    // Voice lines are optional: without them (no connection, no banks) the viewer still plays the animations.
+    private async Task<string> VoiceQueryAsync(ShipInfo ship, SkinInfo skin, StageMode mode)
+    {
+        if (catalog is null)
+        {
+            return "";
+        }
+
+        try
+        {
+            await EnsureVoiceBanksAsync(ship);
+        }
+        catch (Exception e) when (e is IOException or HttpRequestException or InvalidDataException
+                                      or System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            return "";
+        }
+
+        var set = mode switch { StageMode.Chibi => AnimationSet.Chibi, StageMode.Dynamic => AnimationSet.Expression, _ => AnimationSet.Live2D };
+        var library = Voices();
+        var lines = catalog.AnimationVoiceLines(ship, skin, set);
+        var urls = await Task.Run(() => lines
+            .Select(p => (p.Key, Cue: p.Value.Select(l => library.Find(ship.GroupId, skin.GroupIndex, l.ResourceKey)).FirstOrDefault(c => c is not null)))
+            .Where(p => p.Cue is not null)
+            .ToDictionary(p => p.Key, p => LocalFileServer.VoicePath(p.Cue!), StringComparer.Ordinal));
+        return urls.Count == 0 ? "" : "&voices=" + Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(urls));
     }
 
     private LocalFileServer Server()
@@ -369,6 +472,8 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     private void ShowPainting(SkinInfo? skin)
     {
         VoiceLines.Clear();
+        VoiceMessage = "";
+        VoicePlayer.Stop();
         if (skin is not null && SelectedShip is { } ship && catalog is not null)
         {
             foreach (var line in catalog.VoiceLines(ship, skin))

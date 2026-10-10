@@ -5,6 +5,7 @@
              xmlns:controls="using:AzlDl.App.Controls"
              xmlns:viewer="using:AzlDl.Core.Viewer"
              x:Class="AzlDl.App.Views.ShipsView"
+             x:Name="Root"
              x:DataType="vm:ShipsViewModel">
   <Panel>
     <!-- Loading and problem states cover the page until the data is in. -->
@@ -182,13 +183,23 @@
 
             <StackPanel>
               <TextBlock Classes="heading" Text="{Binding SelectedSkin.Name, StringFormat='Voice lines: {0}'}" />
+              <TextBlock Classes="muted" FontSize="13" Text="{Binding VoiceMessage}" TextWrapping="Wrap" Margin="0,0,0,10"
+                         IsVisible="{Binding VoiceMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               <ItemsControl ItemsSource="{Binding VoiceLines}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="data:VoiceLine">
-                    <StackPanel Spacing="2" Margin="0,0,0,12">
-                      <TextBlock Classes="muted" FontSize="12" Text="{Binding Label}" />
-                      <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
-                    </StackPanel>
+                    <DockPanel Margin="0,0,0,12">
+                      <Button DockPanel.Dock="Left" Classes="play" VerticalAlignment="Top" Margin="0,0,12,0"
+                              IsVisible="{Binding #Root.((vm:ShipsViewModel)DataContext).CanPlayVoices}"
+                              Command="{Binding #Root.((vm:ShipsViewModel)DataContext).PlayVoiceCommand}" CommandParameter="{Binding}"
+                              AutomationProperties.Name="{Binding Label, StringFormat='Play {0}'}" ToolTip.Tip="Play">
+                        <Path Data="M 0 0 L 10 6 L 0 12 Z" Fill="{Binding $parent[Button].Foreground}" />
+                      </Button>
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="muted" FontSize="12" Text="{Binding Label}" />
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
+                      </StackPanel>
+                    </DockPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>

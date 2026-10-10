@@ -406,6 +406,42 @@ public class StyleTests
         Assert.Equal("idle", idles["touch_idle4"]);
     }
 
+    // Enterprise's fifth skin (group index 4) uses its own recordings (detail_4) where it has them, served to the viewer as WAV.
+    [AvaloniaFact]
+    public async Task Voice_lines_are_served_with_animations()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+        Assert.SkipUnless(new AzlDl.Core.Viewer.RuntimeStore(new HttpClient(), dataFolder!).IsInstalled, "Viewer runtimes aren't installed.");
+
+        var library = new AzlDl.Core.Audio.VoiceLibrary(Path.Combine(dataFolder!, "AssetBundles"));
+        Assert.Equal(new AzlDl.Core.Audio.VoiceCue("cv-10706", "detail_4"), library.Find(10706, 4, "detail"));
+        Assert.Equal(new AzlDl.Core.Audio.VoiceCue("cv-10706-battle", "mvp_4"), library.Find(10706, 4, "mvp"));
+
+        // The skin has no low-HP line of its own, so the default skin's is used.
+        Assert.Equal(new AzlDl.Core.Audio.VoiceCue("cv-10706-battle", "hp"), library.Find(10706, 4, "hp"));
+
+        var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
+        await ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedShip = ships.Ships.First(s => s.Skins.Any(k => k.Painting == "qiye_5"));
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip.Skins.Single(k => k.Painting == "qiye_5");
+        ships.SelectedStage = ships.StageOptions.Single(o => o.Mode == StageMode.Chibi);
+        await WaitUntil(() => ships.ViewerState != ViewerState.Loading);
+        Assert.Equal(ViewerState.Ready, ships.ViewerState);
+
+        var voices = System.Text.Json.JsonDocument.Parse(System.Web.HttpUtility.ParseQueryString(ships.ViewerUrl!.Query)["voices"]!).RootElement;
+        var url = voices.EnumerateObject().First().Value.GetString()!;
+        using var http = new HttpClient();
+        var wav = await http.GetByteArrayAsync(new Uri(ships.ViewerUrl, url));
+        Assert.Equal("RIFF"u8.ToArray(), wav[..4]);
+        Assert.True(wav.Length > 10_000);
+
+        var refused = await http.GetAsync(new Uri(ships.ViewerUrl, "/voice/..%2F..%2Fconfig/x.wav"));
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, refused.StatusCode);
+    }
+
     // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.
     [AvaloniaFact]
     public async Task Asset_browser_previews_and_saves()

@@ -125,6 +125,23 @@
     <Setter Property="Opacity" Value="0.9" />
   </Style>
 
+  <!-- Square play buttons next to voice lines: outlined, filled with the accent on hover. -->
+  <Style Selector="Button.play">
+    <Setter Property="Width" Value="36" />
+    <Setter Property="Height" Value="36" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+  </Style>
+  <Style Selector="Button.play:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
+  </Style>
+
   <!-- Keyboard focus is always visible, drawn in the accent. -->
   <Style Selector="Control">
     <Setter Property="FocusAdorner">

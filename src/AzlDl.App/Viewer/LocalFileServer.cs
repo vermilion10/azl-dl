@@ -8,6 +8,7 @@ namespace AzlDl.App.Viewer;
 // A minimal static file server for the viewer page. Browsers block the XHR requests the Spine and Live2D runtimes
 // make for file:// URLs, so the data folder is served over HTTP instead. It listens on 127.0.0.1 only, answers GET
 // and HEAD, never serves anything outside the data folder, and serves viewer.html from the app's own resources.
+// /voice/<bank>/<cue>.wav decodes a voice line from the downloaded banks on request.
 public sealed class LocalFileServer : IDisposable
 {
     private const string ViewerPath = "/viewer.html";
@@ -20,15 +21,18 @@ public sealed class LocalFileServer : IDisposable
         [".css"] = "text/css; charset=utf-8",
         [".json"] = "application/json",
         [".png"] = "image/png",
+        [".wav"] = "audio/wav",
     };
 
     private readonly TcpListener listener;
     private readonly string root;
+    private readonly AzlDl.Core.Audio.VoiceLibrary voices;
     private readonly CancellationTokenSource stopping = new();
 
     public LocalFileServer(string root)
     {
         this.root = Path.GetFullPath(root);
+        voices = new AzlDl.Core.Audio.VoiceLibrary(Path.Combine(this.root, "AssetBundles"));
         listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         Port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -40,6 +44,8 @@ public sealed class LocalFileServer : IDisposable
     public string Root => root;
 
     public Uri UrlFor(string pathAndQuery) => new($"http://127.0.0.1:{Port}{pathAndQuery}");
+
+    public static string VoicePath(AzlDl.Core.Audio.VoiceCue cue) => $"/voice/{cue.Bank}/{cue.Cue}.wav";
 
     public void Dispose()
     {
@@ -96,11 +102,21 @@ public sealed class LocalFileServer : IDisposable
             {
                 // The page went away mid-request; nothing to do.
             }
+            catch (Exception e) when (e is InvalidDataException or ArgumentException or IndexOutOfRangeException)
+            {
+                // A bank that doesn't decode; the page sees the connection close and shows no audio.
+            }
         }
     }
 
     private byte[]? Read(string path)
     {
+        var voice = path.Split('/');
+        if (voice is ["", "voice", var bank, var file] && file.EndsWith(".wav", StringComparison.Ordinal))
+        {
+            return voices.ReadWav(new AzlDl.Core.Audio.VoiceCue(bank, file[..^4]));
+        }
+
         if (path == ViewerPath)
         {
             using var resource = AssetLoader.Open(ViewerResource);
