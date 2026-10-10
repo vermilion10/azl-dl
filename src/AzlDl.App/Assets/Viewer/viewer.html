@@ -22,7 +22,9 @@
   #bar label { color: var(--muted); margin-right: 8px; }
   #bar select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--muted);
     padding: 6px 8px; min-height: 36px; max-width: min(460px, 80vw); }
-  #bar select:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  #bar select:focus-visible, #bar button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  #bar button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--muted);
+    padding: 6px 12px; min-height: 36px; cursor: pointer; }
   #bar [hidden] { display: none; }
   #hint { color: var(--muted); margin-left: auto; }
   #message { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px;
@@ -34,6 +36,7 @@
 <div id="stage" tabindex="0" aria-label="Model. Scroll or press plus and minus to zoom, drag or use the arrow keys to move, double-click or press 0 to reset."></div>
 <div id="bar">
   <span id="motionGroup" hidden><label for="motion">Motion</label><select id="motion"></select></span>
+  <button id="replay" type="button" hidden>Play again</button>
   <span id="expressionGroup" hidden><label for="expression">Expression</label><select id="expression"></select></span>
   <span id="hint">Scroll to zoom · drag to move · double-click to reset</span>
 </div>
@@ -273,6 +276,16 @@
     place();
     window.addEventListener("resize", place);
     interact(place);
+
+    // Motions play once, then the model goes back to its Idle motion; "Play again" repeats the chosen one.
+    const groups = Object.keys(model.internalModel.settings.motions || {});
+    const idle = groups.includes("Idle") ? "Idle" : groups[0];
+    const play = (name) => { if (name) model.motion(name, 0, 3); };
+    labels.Idle ??= labels.idle;
+    fill("motion", groups, idle || "", play);
+    const replay = document.getElementById("replay");
+    replay.hidden = groups.length < 2;
+    replay.onclick = () => play(document.getElementById("motion").value);
     message.hidden = true;
   }
 

@@ -301,9 +301,10 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
                 StageMode.Dynamic => $"kind=layers&layout=/art/{bundle}/{DynamicSkinReader.LayoutFileName}",
                 _ => $"kind=live2d&model=/art/{bundle}/{skin.Painting}.model3.json",
             };
-            if (mode != StageMode.Live2D && catalog is not null && SelectedShip is { } ship)
+            if (catalog is not null && SelectedShip is { } ship)
             {
-                var labels = catalog.AnimationLabels(ship, skin, mode == StageMode.Dynamic);
+                var set = mode switch { StageMode.Chibi => AnimationSet.Chibi, StageMode.Dynamic => AnimationSet.Expression, _ => AnimationSet.Live2D };
+                var labels = catalog.AnimationLabels(ship, skin, set);
                 query += "&labels=" + Uri.EscapeDataString(System.Text.Json.JsonSerializer.Serialize(labels));
             }
 
@@ -436,7 +437,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             return;
         }
 
-        var labels = catalog.AnimationLabels(ship, skin, dynamicSkin: true);
+        var labels = catalog.AnimationLabels(ship, skin, AnimationSet.Expression);
         var names = Directory.EnumerateFiles(folder, "*.png").Select(Path.GetFileNameWithoutExtension).OfType<string>()
             .OrderBy(n => int.TryParse(n, out var number) ? number : int.MaxValue).ThenBy(n => n, StringComparer.Ordinal);
         Faces.Clear();

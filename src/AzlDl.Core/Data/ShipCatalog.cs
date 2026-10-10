@@ -10,6 +10,15 @@ public sealed record SkillInfo(string Name, string Description, int MaxLevel);
 
 public sealed record VoiceLine(string Label, string Text, string Key);
 
+// Which of a skin's animation sets to label: chibi actions, painting faces and dynamic skin expressions (both
+// named by ship_skin_expression), or Live2D motions.
+public enum AnimationSet
+{
+    Chibi,
+    Expression,
+    Live2D,
+}
+
 // Number is the skin's 1-based position in the ship's skin list.
 public sealed record SkinInfo(long Id, string Name, string Painting, int Number);
 
@@ -55,17 +64,19 @@ public sealed class ShipCatalog
     private readonly JsonObject words;
     private readonly IReadOnlyList<(string Key, string Label)> voiceKeys;
     private readonly IReadOnlyDictionary<string, string> chibiActions;
+    private readonly IReadOnlyDictionary<string, string> live2DActions;
     private readonly JsonObject expressions;
 
     public IReadOnlyList<ShipInfo> Ships { get; }
 
     private ShipCatalog(IReadOnlyList<ShipInfo> ships, JsonObject words, IReadOnlyList<(string Key, string Label)> voiceKeys,
-        IReadOnlyDictionary<string, string> chibiActions, JsonObject expressions)
+        IReadOnlyDictionary<string, string> chibiActions, IReadOnlyDictionary<string, string> live2DActions, JsonObject expressions)
     {
         Ships = ships;
         this.words = words;
         this.voiceKeys = voiceKeys;
         this.chibiActions = chibiActions;
+        this.live2DActions = live2DActions;
         this.expressions = expressions;
     }
 
@@ -107,6 +118,11 @@ public sealed class ShipCatalog
         var chibiActions = voices.Select(p => p.Value).OfType<JsonObject>()
             .Where(v => v["key"] is not null && Text(v["spine_action"]).Length > 0)
             .ToDictionary(v => Text(v["key"]), v => Text(v["spine_action"]));
+
+        // The Live2D motion the game plays with each voice line.
+        var live2DActions = voices.Select(p => p.Value).OfType<JsonObject>()
+            .Where(v => v["key"] is not null && Text(v["l2d_action"]).Length > 0)
+            .ToDictionary(v => Text(v["key"]), v => Text(v["l2d_action"]));
 
         // Per painting, the face (or dynamic skin expression) shown with each voice line. Older data folders lack it.
         var expressionFile = Path.Combine(dataFolder, "sharecfg/ship_skin_expression.json");
@@ -192,7 +208,7 @@ public sealed class ShipCatalog
                 skinsByGroup.GetValueOrDefault(group) ?? []));
         }
 
-        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, expressions);
+        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, live2DActions, expressions);
     }
 
     // A skin's voice lines. Skins only store the lines they change; the rest come from the ship's default skin, as
@@ -222,16 +238,19 @@ public sealed class ShipCatalog
     }
 
     // Animation name -> the voice lines the game plays it with, for this skin's lines only ("Main screen 1, Normal
-    // touch"). Chibis use character_voice's spine_action; dynamic skins use the skin's ship_skin_expression entry,
-    // whose keys spell main lines as main_1 rather than main1.
-    public IReadOnlyDictionary<string, string> AnimationLabels(ShipInfo ship, SkinInfo skin, bool dynamicSkin)
+    // touch"). Chibis use character_voice's spine_action and Live2D models its l2d_action; faces and dynamic skin
+    // expressions use the skin's ship_skin_expression entry, whose keys spell main lines as main_1 rather than main1.
+    public IReadOnlyDictionary<string, string> AnimationLabels(ShipInfo ship, SkinInfo skin, AnimationSet set)
     {
         var faces = expressions[skin.Painting] as JsonObject;
         string? Animation(string key)
         {
-            if (!dynamicSkin)
+            switch (set)
             {
-                return chibiActions.GetValueOrDefault(key);
+                case AnimationSet.Chibi:
+                    return chibiActions.GetValueOrDefault(key);
+                case AnimationSet.Live2D:
+                    return live2DActions.GetValueOrDefault(key);
             }
 
             var faceKey = key.StartsWith("main", StringComparison.Ordinal) && int.TryParse(key.AsSpan(4), out var n) ? $"main_{n}" : key;

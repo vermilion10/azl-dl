@@ -54,6 +54,10 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         return File.Exists(target) && File.Exists(PaintingComposer.LayoutPath(target));
     }
 
+    // Live2D models extracted before motions were converted have no motions folder.
+    private static bool NeedsMotions(string bundlePath, string folder) =>
+        bundlePath.StartsWith("live2d/", StringComparison.Ordinal) && !Directory.Exists(Path.Combine(folder, ArtExtractor.MotionFolder));
+
     public string FaceFolder(string painting) => FolderFor("paintingface/" + painting);
 
     // Downloads a painting's expression faces. Returns the folder, or null when the painting has none. A painting
@@ -79,7 +83,7 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     public async Task<string?> FetchBundleAsync(AssetCategory category, string bundlePath, CancellationToken cancellationToken = default)
     {
         var folder = FolderFor(bundlePath);
-        if (Directory.Exists(folder) && Directory.EnumerateFiles(folder).Any())
+        if (Directory.Exists(folder) && Directory.EnumerateFiles(folder).Any() && !NeedsMotions(bundlePath, folder))
         {
             return folder;
         }

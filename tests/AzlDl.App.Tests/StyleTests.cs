@@ -355,6 +355,43 @@ public class StyleTests
         window.Close();
     }
 
+    // Enterprise's "Soaring Wings of Freedom" Live2D model gets its AnimationClips as motions, labelled by voice line.
+    // A model extracted before motions were converted (no motions folder) is extracted again.
+    [AvaloniaFact]
+    public async Task Live2D_model_has_motions()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder to render snapshots.");
+        Assert.SkipUnless(new AzlDl.Core.Viewer.RuntimeStore(new HttpClient(), dataFolder!).IsInstalled, "Viewer runtimes aren't installed.");
+
+        var motions = Path.Combine(dataFolder!, "art", "live2d", "qiye_7", "motions");
+        if (Directory.Exists(motions))
+        {
+            Directory.Delete(motions, recursive: true);
+        }
+
+        var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
+        await ships.LoadAsync();
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedShip = ships.Ships.First(s => s.Skins.Any(k => k.Painting == "qiye_7"));
+        Dispatcher.UIThread.RunJobs();
+        ships.SelectedSkin = ships.SelectedShip.Skins.Single(k => k.Painting == "qiye_7");
+        ships.SelectedStage = ships.StageOptions.Single(o => o.Mode == StageMode.Live2D);
+        await WaitUntil(() => ships.ViewerState != ViewerState.Loading);
+        Assert.Equal(ViewerState.Ready, ships.ViewerState);
+
+        using var http = new HttpClient();
+        var model = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(new Uri(ships.ViewerUrl!, "/art/live2d/qiye_7/qiye_7.model3.json"))).RootElement;
+        var groups = model.GetProperty("FileReferences").GetProperty("Motions");
+        Assert.True(groups.TryGetProperty("Idle", out _));
+        var file = groups.GetProperty("main_1")[0].GetProperty("File").GetString()!;
+        var motion = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(new Uri(ships.ViewerUrl!, "/art/live2d/qiye_7/" + file))).RootElement;
+        Assert.Contains(motion.GetProperty("Curves").EnumerateArray(), c => c.GetProperty("Id").GetString() == "ParamAngleX");
+
+        var labels = System.Text.Json.JsonDocument.Parse(System.Web.HttpUtility.ParseQueryString(ships.ViewerUrl!.Query)["labels"]!).RootElement;
+        Assert.Contains("Main screen 1", labels.GetProperty("main_1").GetString());
+    }
+
     // The browser lists bundles by folder, previews a texture, opens the encrypted scripts bundle, and saves an object.
     [AvaloniaFact]
     public async Task Asset_browser_previews_and_saves()

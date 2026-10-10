@@ -21,6 +21,7 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
     private const string Live2DFolder = "live2d/";
     private const string TextureSuffix = "_tex";
     private const string MeshSuffix = "-mesh";
+    public const string MotionFolder = "motions";
 
     public ExtractSummary Extract(IEnumerable<string> bundlePaths, int concurrency, IProgress<string>? log = null)
     {
@@ -172,7 +173,7 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
 
     // Live2D bundles are Cubism for Unity prefabs. The model itself is the byte array in the CubismMoc component;
     // written next to the textures and physics file with a model3.json that ties them together, it loads in standard
-    // Cubism viewers. Motions are Unity AnimationClips and aren't converted.
+    // Cubism viewers. The prefab's AnimationClips are converted to motions/<clip>.motion3.json.
     private int ExtractLive2D(AssetsManager manager, AssetsFileInstance instance, string bundlePath)
     {
         var scripts = new Dictionary<long, string>();
@@ -209,14 +210,28 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
             var folder = Path.Combine(outputDirectory, bundlePath);
             var textures = Directory.EnumerateFiles(folder, "texture_*.png").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToList();
             var physics = Directory.EnumerateFiles(folder, "*.physics3*").Select(Path.GetFileName).FirstOrDefault();
-            WriteModelJson(Target(bundlePath, name + ".model3.json"), mocFile, textures!, physics);
-            return 2;
+
+            // The folder is made even for a model without clips, which marks the model as converted with motions.
+            Directory.CreateDirectory(Path.Combine(folder, MotionFolder));
+            var motions = Live2DMotionConverter.Convert(manager, instance, scripts);
+            foreach (var motion in motions)
+            {
+                File.WriteAllText(Target(bundlePath + "/" + MotionFolder, motion.Name + ".motion3.json"), motion.Json);
+            }
+
+            var groups = Live2DMotionConverter.Groups(manager, instance, scripts);
+            WriteModelJson(Target(bundlePath, name + ".model3.json"), mocFile, textures!, physics, motions, groups);
+            return 2 + motions.Count;
         }
 
         return 0;
     }
 
-    private static void WriteModelJson(string path, string moc, IReadOnlyList<string> textures, string? physics)
+    // The game's idle clip is filed under the group name Live2D viewers play on their own between motions.
+    public static string MotionGroup(string clip) => clip == "idle" ? "Idle" : clip;
+
+    private static void WriteModelJson(string path, string moc, IReadOnlyList<string> textures, string? physics,
+        IReadOnlyList<Live2DMotion> motions, (IReadOnlyList<string> EyeBlink, IReadOnlyList<string> LipSync) groups)
     {
         using var stream = File.Create(path);
         using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions { Indented = true });
@@ -236,7 +251,41 @@ public sealed class ArtExtractor(string assetDirectory, string outputDirectory)
             writer.WriteString("Physics", physics);
         }
 
+        if (motions.Count > 0)
+        {
+            writer.WriteStartObject("Motions");
+            foreach (var motion in motions.OrderBy(m => m.Name, StringComparer.Ordinal))
+            {
+                writer.WriteStartArray(MotionGroup(motion.Name));
+                writer.WriteStartObject();
+                writer.WriteString("File", $"{MotionFolder}/{motion.Name}.motion3.json");
+                writer.WriteNumber("FadeInTime", 0.5);
+                writer.WriteNumber("FadeOutTime", 0.5);
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+            }
+
+            writer.WriteEndObject();
+        }
+
         writer.WriteEndObject();
+        writer.WriteStartArray("Groups");
+        foreach (var (name, ids) in new[] { ("EyeBlink", groups.EyeBlink), ("LipSync", groups.LipSync) })
+        {
+            writer.WriteStartObject();
+            writer.WriteString("Target", "Parameter");
+            writer.WriteString("Name", name);
+            writer.WriteStartArray("Ids");
+            foreach (var id in ids)
+            {
+                writer.WriteStringValue(id);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
         writer.WriteEndObject();
     }
 
