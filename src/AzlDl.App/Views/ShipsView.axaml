@@ -7,6 +7,9 @@
              x:Class="AzlDl.App.Views.ShipsView"
              x:Name="Root"
              x:DataType="vm:ShipsViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding BackToGalleryCommand}" />
+  </UserControl.KeyBindings>
   <Panel>
     <!-- Loading and problem states cover the page until the data is in. -->
     <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
@@ -19,37 +22,160 @@
       <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
     </StackPanel>
 
-    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="280,*,440">
-      <!-- Ship list -->
+    <!-- Gallery: every ship as a card in its rarity's frame, narrowed by the filters on the left. -->
+    <Grid IsVisible="{Binding IsReady}">
+    <Grid IsVisible="{Binding IsGallery}" ColumnDefinitions="300,*">
       <DockPanel Background="{DynamicResource SurfaceBrush}">
-        <TextBox DockPanel.Dock="Top" Margin="16,16,16,8" PlaceholderText="Search ships" Text="{Binding Filter}"
+        <TextBox DockPanel.Dock="Top" Margin="16,16,16,4" PlaceholderText="Search ships" Text="{Binding Filter}"
                  AutomationProperties.Name="Search ships" />
-        <TextBlock DockPanel.Dock="Bottom" Classes="muted data" Margin="16,8" FontSize="12"
-                   Text="{Binding Ships.Count, StringFormat='{}{0} ships'}" />
-        <ListBox Classes="picker" ItemsSource="{Binding Ships}" SelectedItem="{Binding SelectedShip}"
-                 AutomationProperties.Name="Ships">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="data:ShipInfo">
-              <StackPanel Spacing="1">
-                <TextBlock Text="{Binding Name}" FontWeight="Medium" />
-                <TextBlock Classes="muted" FontSize="12" Text="{Binding TypeName}" />
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+        <Button DockPanel.Dock="Bottom" Margin="16,8,16,16" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                Content="Clear filters" Command="{Binding ClearFiltersCommand}" />
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding FilterGroups}" Margin="16,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:FilterGroup">
+                <StackPanel Margin="0,16,0,0">
+                  <TextBlock Classes="heading" Text="{Binding Title}" Margin="0,0,0,8" />
+                  <ItemsControl ItemsSource="{Binding Chips}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:FilterChip">
+                        <ToggleButton Classes="chip" IsChecked="{Binding IsChecked}"
+                                      AutomationProperties.Name="{Binding Label}">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Border Width="10" Height="14" CornerRadius="2" VerticalAlignment="Center" IsVisible="{Binding HasTier}"
+                                    Background="{Binding Tier, Converter={x:Static controls:RarityBrushes.Background}}" />
+                            <TextBlock Classes="data" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Text="{Binding Code}" IsVisible="{Binding HasCode}" />
+                            <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </ToggleButton>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
       </DockPanel>
 
-      <!-- Stage: the painting, or the chibi / Live2D model in the viewer page -->
-      <Border Grid.Column="1" Background="{DynamicResource StageBrush}">
-        <DockPanel>
-          <ListBox DockPanel.Dock="Top" Classes="nav" Margin="16,8,16,0" ItemsSource="{Binding StageOptions}"
-                   SelectedItem="{Binding SelectedStage}" AutomationProperties.Name="Stage">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:StageOption">
-                <TextBlock Text="{Binding Title}" />
+      <DockPanel Grid.Column="1" Background="{DynamicResource StageBrush}">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="24,16,24,4">
+          <TextBlock Classes="data muted" FontSize="13" VerticalAlignment="Center" Text="{Binding ShownTitle}" />
+          <Button Grid.Column="1" Margin="0,0,12,0" Content="{Binding ImageDownloadTitle}" IsVisible="{Binding CanDownloadImages}"
+                  Command="{Binding DownloadShipImagesCommand}" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="muted" Text="Sort" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding SortOptions}" SelectedItem="{Binding SelectedSort}" MinWidth="180"
+                      AutomationProperties.Name="Sort ships">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:SortOption">
+                  <TextBlock Text="{Binding Title}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+        </Grid>
+        <StackPanel DockPanel.Dock="Top" Margin="24,4,24,0" Spacing="6"
+                    IsVisible="{Binding ImageMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Classes="muted" FontSize="13" Text="{Binding ImageMessage}" TextWrapping="Wrap" />
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding ImagesBusy}" />
+        </StackPanel>
+
+        <Panel>
+          <ItemsControl x:Name="CardList" ItemsSource="{Binding CardRows}" Padding="24,12,12,24"
+                        XYFocus.NavigationModes="Keyboard" AutomationProperties.Name="Ships">
+            <ItemsControl.Template>
+              <ControlTemplate>
+                <ScrollViewer>
+                  <ItemsPresenter Margin="{TemplateBinding Padding}" />
+                </ScrollViewer>
+              </ControlTemplate>
+            </ItemsControl.Template>
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <VirtualizingStackPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ShipCardRow">
+                <ItemsControl ItemsSource="{Binding Cards}" Margin="0,0,0,12">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="12" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ShipCard">
+                      <Button Classes="card" Command="{Binding #Root.((vm:ShipsViewModel)DataContext).OpenShipCommand}"
+                              CommandParameter="{Binding Ship}"
+                              AutomationProperties.Name="{Binding Ship.Name}">
+                        <ToolTip.Tip>
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding Ship.Name}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Ship.TypeName}" />
+                            <TextBlock Text="{Binding Ship.NationName}" />
+                          </StackPanel>
+                        </ToolTip.Tip>
+                        <Border Width="{x:Static vm:ShipsViewModel.CardWidth}" Height="188" CornerRadius="4" BorderThickness="2"
+                                ClipToBounds="True"
+                                BorderBrush="{Binding Ship.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
+                                Background="{Binding Ship.Tier, Converter={x:Static controls:RarityBrushes.Background}}">
+                          <Panel>
+                            <Image Source="{Binding Image}" Stretch="UniformToFill" VerticalAlignment="Top" />
+                            <!-- Not downloaded yet: a question mark keeps the card's place and frame. -->
+                            <TextBlock Text="?" IsVisible="{Binding !HasImage}" FontSize="56" FontWeight="Bold" Foreground="#B3FFFFFF"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,24" />
+                            <Border Classes="cardTag" HorizontalAlignment="Left" CornerRadius="0,0,4,0">
+                              <TextBlock Text="{Binding Ship.TierCode}" />
+                            </Border>
+                            <Border Classes="cardTag" HorizontalAlignment="Right" CornerRadius="0,0,0,4"
+                                    IsVisible="{Binding Ship.HullCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                              <TextBlock Text="{Binding Ship.HullCode}" />
+                            </Border>
+                            <Border VerticalAlignment="Bottom" Background="#D9101318" Padding="6,5">
+                              <TextBlock Text="{Binding Ship.Name}" Foreground="White" FontSize="13" FontWeight="SemiBold"
+                                         TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+                            </Border>
+                          </Panel>
+                        </Border>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel IsVisible="{Binding NoMatches}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+            <TextBlock Classes="muted" Text="No ship matches these filters." />
+            <Button HorizontalAlignment="Center" Content="Clear filters" Command="{Binding ClearFiltersCommand}" />
+          </StackPanel>
+        </Panel>
+      </DockPanel>
+    </Grid>
+
+    <Grid IsVisible="{Binding IsDetail}" ColumnDefinitions="*,440">
+      <!-- Stage: the painting, or the chibi / Live2D model in the viewer page -->
+      <Border Background="{DynamicResource StageBrush}">
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Top" Margin="16,8,16,0">
+            <Button DockPanel.Dock="Left" Classes="back" Command="{Binding BackToGalleryCommand}" Margin="0,0,16,0"
+                    VerticalAlignment="Stretch" VerticalContentAlignment="Center" ToolTip.Tip="Back to all ships (Esc)"
+                    Content="‹ All ships" />
+            <ListBox Classes="nav" ItemsSource="{Binding StageOptions}"
+                     SelectedItem="{Binding SelectedStage}" AutomationProperties.Name="Stage">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:StageOption">
+                  <TextBlock Text="{Binding Title}" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
 
           <Panel Margin="24">
             <!-- Painting -->
@@ -126,7 +252,7 @@
       </Border>
 
       <!-- Ship details -->
-      <ScrollViewer Grid.Column="2">
+      <ScrollViewer Grid.Column="1">
         <controls:ChamferBorder Classes="panel" Margin="0" Padding="30,28">
           <StackPanel Spacing="30">
             <StackPanel Spacing="6">
@@ -207,6 +333,7 @@
           </StackPanel>
         </controls:ChamferBorder>
       </ScrollViewer>
+    </Grid>
     </Grid>
   </Panel>
 </UserControl>

@@ -9,6 +9,7 @@ using AzlDl.App.Settings;
 using AzlDl.App.Theming;
 using AzlDl.App.ViewModels;
 using AzlDl.App.Views;
+using AzlDl.Core.Data;
 using Xunit;
 
 namespace AzlDl.App.Tests;
@@ -65,6 +66,31 @@ public class StyleTests
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(main.Ships.IsReady, main.Ships.Message);
+        Assert.True(main.Ships.IsGallery);
+        Assert.NotEmpty(main.Ships.CardRows);
+        await WaitUntil(() => main.Ships.CardRows.SelectMany(r => r.Cards).Where(c => c.HasImage).Take(3).All(c => c.Image is not null));
+        var gallery = window.CaptureRenderedFrame();
+#pragma warning disable CS0618
+        gallery!.Save(Path.Combine(OutputFolder(), $"gallery-{style}-{theme}.png"));
+#pragma warning restore CS0618
+        if (style == AppStyle.ChartRoom && theme == ThemeMode.Light)
+        {
+            // Sorted by number, the first rows mix every rarity.
+            main.Ships.SelectedSort = main.Ships.SortOptions.Single(o => o.Title == "Ship number");
+            await WaitUntil(() => main.Ships.CardRows.Take(4).SelectMany(r => r.Cards).Where(c => c.HasImage).All(c => c.Image is not null));
+            SaveFrame(window, "gallery-by-number.png");
+            main.Ships.ClearFiltersCommand.Execute(null);
+            main.Ships.FilterGroups.Single(g => g.Title == "Collection").Chips.Where(c => c.Label is "Research" or "META").ToList()
+                .ForEach(c => c.IsChecked = true);
+            await WaitUntil(() => main.Ships.CardRows.Take(4).SelectMany(r => r.Cards).Where(c => c.HasImage).All(c => c.Image is not null));
+            SaveFrame(window, "gallery-research-meta.png");
+            main.Ships.ClearFiltersCommand.Execute(null);
+            main.Ships.SelectedSort = main.Ships.SortOptions[0];
+        }
+
+        main.Ships.OpenShipCommand.Execute(main.Ships.SelectedShip);
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(main.Ships.IsDetail);
         Assert.NotNull(main.Ships.SelectedShip);
         Assert.NotNull(main.Ships.SelectedSkin);
         var skinList = window.GetVisualDescendants().OfType<ListBox>()
@@ -132,6 +158,60 @@ public class StyleTests
         frame!.Save(Path.Combine(OutputFolder(), "settings-PortMenu-Dark.png"));
 #pragma warning restore CS0618
         window.Close();
+    }
+
+    // The gallery offers only filter values some ship has, combines groups with AND and chips in a group with OR, and
+    // frames each card by its rarity tier.
+    [AvaloniaFact]
+    public async Task Ship_gallery_filters_by_rarity_hull_faction_and_collection()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+
+        var ships = new ShipsViewModel(new AppSettings { DataFolder = dataFolder! });
+        await ships.LoadAsync();
+        var total = ships.Ships.Count;
+        Assert.Equal(["Rarity", "Collection", "Fleet", "Hull type", "Faction"], ships.FilterGroups.Select(g => g.Title));
+        Assert.All(ships.FilterGroups, g => Assert.True(g.ShowsAll));
+
+        FilterChip Chip(string group, string label) => ships.FilterGroups.Single(g => g.Title == group).Chips.Single(c => c.Label == label);
+        Assert.Equal("SSR", Chip("Rarity", "Super Rare").Code);
+        Assert.Equal("DD", Chip("Hull type", "Destroyer").Code);
+        Assert.Contains(ships.FilterGroups.Single(g => g.Title == "Faction").Chips, c => c.Label == "Eagle Union");
+        Assert.DoesNotContain(ships.FilterGroups.Single(g => g.Title == "Faction").Chips, c => c.Label.Any(ch => ch > 0x2E80));
+
+        Chip("Collection", "Research").IsChecked = true;
+        Assert.InRange(ships.Ships.Count, 1, total - 1);
+        Assert.All(ships.Ships, s => Assert.Contains(s.Tier, new[] { RarityTier.Priority, RarityTier.Decisive }));
+
+        // Two chips in one group widen the result; a second group narrows it.
+        Chip("Collection", "META").IsChecked = true;
+        var researchOrMeta = ships.Ships.Count;
+        Assert.Contains(ships.Ships, s => s.Tier == RarityTier.Meta);
+        Chip("Fleet", "Vanguard").IsChecked = true;
+        Assert.InRange(ships.Ships.Count, 1, researchOrMeta - 1);
+        Assert.All(ships.Ships, s => Assert.Equal("vanguard", s.TeamType));
+
+        ships.Filter = "no ship is called this";
+        Assert.True(ships.NoMatches);
+        ships.ClearFiltersCommand.Execute(null);
+        Assert.Equal(total, ships.Ships.Count);
+        Assert.All(ships.FilterGroups, g => Assert.True(g.ShowsAll));
+
+        // Rows hold as many cards as the view asks for, and every ship has exactly one card.
+        ships.Columns = 7;
+        Assert.All(ships.CardRows.SkipLast(1), r => Assert.Equal(7, r.Cards.Count));
+        Assert.Equal(total, ships.CardRows.Sum(r => r.Cards.Count));
+
+        var enterprise = ships.Ships.Single(s => s.GroupId == 10706);
+        Assert.Equal(RarityTier.SuperRare, enterprise.Tier);
+        Assert.Equal("CV", enterprise.HullCode);
+        Assert.Equal(ShipCollection.Standard, enterprise.Collection);
+        ships.OpenShipCommand.Execute(enterprise);
+        Assert.True(ships.IsDetail);
+        Assert.Same(enterprise, ships.SelectedShip);
+        ships.BackToGalleryCommand.Execute(null);
+        Assert.True(ships.IsGallery);
     }
 
     // With no game data, Ships explains why and its button really opens Sync.

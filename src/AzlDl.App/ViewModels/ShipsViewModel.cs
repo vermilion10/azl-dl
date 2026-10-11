@@ -53,7 +53,7 @@ public enum PaintingState
     Failed,
 }
 
-// The ship list and the selected ship's page.
+// The ship gallery and the selected ship's page.
 public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObject
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
@@ -114,6 +114,62 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     [ObservableProperty]
     private string filter = "";
+
+    // The gallery shows every ship as a card; opening one shows its page until Back.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsGallery))]
+    private bool isDetail;
+
+    public bool IsGallery => !IsDetail;
+
+    public ObservableCollection<FilterGroup> FilterGroups { get; } = [];
+
+    public IReadOnlyList<SortOption> SortOptions { get; } =
+    [
+        new("Rarity, high to low", ships => ships.OrderByDescending(s => s.Rarity).ThenBy(s => s.GroupId)),
+        new("Rarity, low to high", ships => ships.OrderBy(s => s.Rarity).ThenBy(s => s.GroupId)),
+        new("Name", ships => ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)),
+        new("Hull type", ships => ships.OrderBy(s => s.TypeId).ThenByDescending(s => s.Rarity).ThenBy(s => s.GroupId)),
+        new("Ship number", ships => ships.OrderBy(s => s.GroupId)),
+    ];
+
+    [ObservableProperty]
+    private SortOption? selectedSort;
+
+    public ObservableCollection<ShipCardRow> CardRows { get; } = [];
+
+    // Cards per row, set by the view from its width.
+    [ObservableProperty]
+    private int columns = 6;
+
+    private readonly Dictionary<ShipInfo, ShipCard> cards = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadImages), nameof(ImageDownloadTitle))]
+    private int imagesMissing;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadImages))]
+    private bool imagesBusy;
+
+    [ObservableProperty]
+    private string imageMessage = "";
+
+    public bool CanDownloadImages => ImagesMissing > 0 && !ImagesBusy;
+
+    // Card images are about 30 KB each.
+    public string ImageDownloadTitle =>
+        $"Download {Count(ImagesMissing)} card images (about {Math.Max(1, ImagesMissing * 30 / 1024)} MB)";
+
+    private static string Count(int value) => value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    public const double CardWidth = 132;
+
+    public const double CardSpacing = 12;
+
+    public bool NoMatches => IsReady && Ships.Count == 0;
+
+    public string ShownTitle => Ships.Count == all.Count ? $"{Count(all.Count)} ships" : $"{Count(Ships.Count)} of {Count(all.Count)} ships";
 
     [ObservableProperty]
     private ShipInfo? selectedShip;
@@ -263,6 +319,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         {
             catalog = await Task.Run(() => ShipCatalog.Load(folder));
             all = catalog.Ships;
+            BuildGallery();
             ApplyFilter();
             SelectedShip = Ships.FirstOrDefault(s => s.EnglishName.Contains("Enterprise", StringComparison.Ordinal)) ?? Ships.FirstOrDefault();
             State = LoadState.Ready;
@@ -277,6 +334,142 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     }
 
     partial void OnFilterChanged(string value) => ApplyFilter();
+
+    partial void OnSelectedSortChanged(SortOption? value) => ApplyFilter();
+
+    partial void OnColumnsChanged(int value) => BuildRows();
+
+    [RelayCommand]
+    private void OpenShip(ShipInfo? ship)
+    {
+        if (ship is null)
+        {
+            return;
+        }
+
+        SelectedShip = ship;
+        IsDetail = true;
+    }
+
+    [RelayCommand]
+    private void BackToGallery()
+    {
+        IsDetail = false;
+        VoicePlayer.Stop();
+    }
+
+    [RelayCommand]
+    private void ClearFilters()
+    {
+        Filter = "";
+        foreach (var group in FilterGroups)
+        {
+            group.Clear();
+        }
+    }
+
+    // Filter chips come from the ships themselves, so only values some ship has are offered.
+    private void BuildGallery()
+    {
+        var fetcher = Fetcher();
+        cards.Clear();
+        foreach (var ship in all)
+        {
+            var path = fetcher.ShipImagePath(ship.Painting);
+            cards[ship] = new ShipCard(ship, ship.Painting.Length > 0 && File.Exists(path) ? path : null);
+        }
+
+        ImagesMissing = cards.Values.Count(c => !c.HasImage && c.Ship.Painting.Length > 0);
+        SelectedSort ??= SortOptions[0];
+
+        string[] tierCodes = ["N", "R", "SR", "SSR", "UR"];
+        var rarities = all.GroupBy(s => s.Rarity).OrderBy(g => g.Key)
+            .Select(g => new FilterChip(g.First().RarityName, tierCodes[g.Key - 2], s => s.Rarity == g.Key, (RarityTier)(g.Key - 2)));
+
+        var collections = new (ShipCollection Collection, string Title)[]
+        {
+            (ShipCollection.Standard, "Standard"), (ShipCollection.Research, "Research"), (ShipCollection.Meta, "META"),
+            (ShipCollection.Collab, "Collab"),
+        }.Where(c => all.Any(s => s.Collection == c.Collection))
+            .Select(c => new FilterChip(c.Title, "", s => s.Collection == c.Collection,
+                c.Collection switch { ShipCollection.Research => RarityTier.Priority, ShipCollection.Meta => RarityTier.Meta, _ => null }));
+
+        var roles = new (string Team, string Title)[] { ("vanguard", "Vanguard"), ("main", "Main fleet"), ("submarine", "Submarine") }
+            .Where(r => all.Any(s => s.TeamType == r.Team))
+            .Select(r => new FilterChip(r.Title, "", s => s.TeamType == r.Team));
+
+        // Some hull names repeat across fleet roles (DDG, Sailing Frigate); those say which fleet they sail in.
+        var types = all.GroupBy(s => s.TypeId).OrderBy(g => g.Key).ToList();
+        var typeNames = types.GroupBy(g => g.First().TypeName.Trim()).Where(n => n.Count() > 1).Select(n => n.Key).ToHashSet();
+        var hulls = types.Select(g =>
+        {
+            var name = g.First().TypeName.Trim();
+            var team = g.First().TeamType switch { "vanguard" => "Vanguard", "main" => "Main fleet", "submarine" => "Submarine", var t => t };
+            return new FilterChip(typeNames.Contains(name) ? $"{name} ({team})" : name, g.First().HullCode, s => s.TypeId == g.Key);
+        });
+
+        var factions = all.GroupBy(s => s.NationName).OrderBy(g => g.Min(s => s.NationId))
+            .Select(g => new FilterChip(g.Key, "", s => s.NationName == g.Key));
+
+        FilterGroups.Clear();
+        foreach (var (title, chips) in new[] { ("Rarity", rarities), ("Collection", collections), ("Fleet", roles), ("Hull type", hulls), ("Faction", factions) })
+        {
+            FilterGroups.Add(new FilterGroup(title, chips, ApplyFilter));
+        }
+    }
+
+    private void BuildRows()
+    {
+        CardRows.Clear();
+        var columns = Math.Max(1, Columns);
+        for (var i = 0; i < Ships.Count; i += columns)
+        {
+            CardRows.Add(new ShipCardRow(Ships.Skip(i).Take(columns).Select(s => cards[s]).ToList()));
+        }
+
+        OnPropertyChanged(nameof(ShownTitle));
+        OnPropertyChanged(nameof(NoMatches));
+    }
+
+    [RelayCommand]
+    private async Task DownloadShipImagesAsync()
+    {
+        var missing = cards.Values.Where(c => !c.HasImage && c.Ship.Painting.Length > 0).ToList();
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
+        ImagesBusy = true;
+        ImageMessage = $"Downloading {Count(missing.Count)} card images…";
+        try
+        {
+            var fetcher = Fetcher();
+            await Task.Run(() => fetcher.FetchImagesAsync(
+                missing.Select(c => AssetFetcher.ShipImageFolder + c.Ship.Painting).Distinct().ToList()));
+            foreach (var card in missing)
+            {
+                var path = fetcher.ShipImagePath(card.Ship.Painting);
+                if (File.Exists(path))
+                {
+                    CardImages.Forget(path);
+                    card.SetImagePath(path);
+                }
+            }
+
+            ImagesMissing = cards.Values.Count(c => !c.HasImage && c.Ship.Painting.Length > 0);
+            ImageMessage = ImagesMissing == 0 ? "" : $"The game has no card image for {Count(ImagesMissing)} ships.";
+        }
+        catch (Exception e) when (e is IOException or HttpRequestException or InvalidDataException
+                                      or System.Net.Sockets.SocketException or OperationCanceledException)
+        {
+            ImageMessage = $"The card images didn't download: {e.Message}";
+        }
+        finally
+        {
+            ImagesBusy = false;
+        }
+    }
 
     // Posted so the skin list has the new ship's skins before one is selected; set earlier, the list would ignore it.
     partial void OnSelectedShipChanged(ShipInfo? value) =>
@@ -336,11 +529,12 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         }
 
         ViewerState = ViewerState.Loading;
+        // Bundle paths are lower case on the CDN and on disk.
         var (what, bundle) = mode switch
         {
-            StageMode.Chibi => ("chibi", $"char/{skin.Painting}"),
-            StageMode.Dynamic => ("dynamic skin", $"{DynamicSkinReader.Folder}{skin.Painting}"),
-            _ => ("Live2D model", $"live2d/{skin.Painting}"),
+            StageMode.Chibi => ("chibi", $"char/{skin.Painting.ToLowerInvariant()}"),
+            StageMode.Dynamic => ("dynamic skin", $"{DynamicSkinReader.Folder}{skin.Painting.ToLowerInvariant()}"),
+            _ => ("Live2D model", $"live2d/{skin.Painting.ToLowerInvariant()}"),
         };
         ViewerMessage = $"Getting the {what} for {skin.Name}…";
         try
@@ -454,19 +648,17 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     private void ApplyFilter()
     {
-        var keep = SelectedShip;
+        var shown = all.Where(s => (Filter.Length == 0
+                                    || s.Name.Contains(Filter, StringComparison.OrdinalIgnoreCase)
+                                    || s.EnglishName.Contains(Filter, StringComparison.OrdinalIgnoreCase))
+                                   && FilterGroups.All(g => g.Matches(s)));
         Ships.Clear();
-        foreach (var ship in all.Where(s => Filter.Length == 0
-                                            || s.Name.Contains(Filter, StringComparison.OrdinalIgnoreCase)
-                                            || s.EnglishName.Contains(Filter, StringComparison.OrdinalIgnoreCase)))
+        foreach (var ship in (SelectedSort ?? SortOptions[0]).Sort(shown))
         {
             Ships.Add(ship);
         }
 
-        if (keep is not null && Ships.Contains(keep))
-        {
-            SelectedShip = keep;
-        }
+        BuildRows();
     }
 
     private void ShowPainting(SkinInfo? skin)
