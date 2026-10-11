@@ -214,6 +214,53 @@ public class StyleTests
         Assert.True(ships.IsGallery);
     }
 
+    // Equipment lists each codex entry once with its stats at +0 and fully enhanced, filters like the ship gallery, and
+    // shows the picked piece in the detail pane.
+    [AvaloniaFact]
+    public async Task Equipment_gallery_shows_stats_and_filters()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.PortMenu, Theme = ThemeMode.Dark, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is EquipmentViewModel);
+        var equipment = main.Equipment;
+        await WaitUntil(() => equipment.IsReady || equipment.HasProblem);
+        Assert.True(equipment.IsReady, equipment.Message);
+        Assert.Equal(["Rarity", "Type", "Tier", "Faction"], equipment.FilterGroups.Select(g => g.Title));
+
+        // Twin 380mm SK C/34: damage grows with enhancement, its FP bonus doesn't.
+        var gun = equipment.Shown.Single(e => e.Id == 44100);
+        Assert.Equal("Artillery (Battleship)", gun.TypeName);
+        Assert.Equal("Iron Blood", gun.NationName);
+        Assert.Equal(6, gun.MaxLevel);
+        Assert.Contains(gun.Stats, s => s.Label == "Damage" && s.Base == "48 x 2" && s.Max == "86 x 2");
+        Assert.Contains(gun.Stats, s => s.Label == "FP" && s.Base == "12");
+        Assert.Contains("Battleship", gun.UsableBy);
+        Assert.Equal("Volley", gun.Speciality);
+
+        var total = equipment.Shown.Count;
+        var ultra = equipment.FilterGroups.Single(g => g.Title == "Rarity").Chips.Single(c => c.Label == "Ultra Rare");
+        ultra.IsChecked = true;
+        Assert.InRange(equipment.Shown.Count, 1, total - 1);
+        Assert.All(equipment.Shown, e => Assert.Equal(RarityTier.UltraRare, e.Tier));
+        ultra.IsChecked = false;
+        Assert.Equal(total, equipment.Shown.Count);
+
+        equipment.SelectCommand.Execute(gun);
+        Assert.Same(gun, equipment.SelectedEquipment);
+        Assert.Single(equipment.CardRows.SelectMany(r => r.Cards), c => c.IsSelected);
+        await WaitUntil(() => equipment.CardRows.Take(5).SelectMany(r => r.Cards).Where(c => c.HasImage).All(c => c.Image is not null)
+                              && (equipment.SelectedCard?.HasImage != true || equipment.SelectedCard.Image is not null));
+        SaveFrame(window, "equipment-PortMenu-Dark.png");
+        window.Close();
+    }
+
     // With no game data, Ships explains why and its button really opens Sync.
     [AvaloniaFact]
     public async Task Empty_data_folder_points_to_sync()

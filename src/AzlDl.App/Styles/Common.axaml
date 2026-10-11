@@ -197,6 +197,27 @@
     <Setter Property="FontFamily" Value="{DynamicResource DataFont}" />
   </Style>
 
+  <!-- Equipment rarity stars sit on the card's coloured background, so they carry a shadow to stay legible on gold. -->
+  <Style Selector="TextBlock.stars">
+    <Setter Property="Foreground" Value="#FFD54A" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="Margin" Value="0,0,0,2" />
+    <Setter Property="Effect" Value="drop-shadow(0 1 2 #E6000000)" />
+  </Style>
+
+  <!-- The ring around the equipment card shown in the detail pane. -->
+  <Style Selector="Border.selectRing">
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="Padding" Value="2" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+  </Style>
+  <Style Selector="Border.selectRing.selected">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+
   <!-- Back to the gallery: quiet, like the stage tabs next to it. -->
   <Style Selector="Button.back">
     <Setter Property="Background" Value="Transparent" />

@@ -1,0 +1,206 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:data="using:AzlDl.Core.Data"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.EquipmentView"
+             x:Name="Root"
+             x:DataType="vm:EquipmentViewModel">
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="Equipment data isn't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="300,*,400">
+      <DockPanel Background="{DynamicResource SurfaceBrush}">
+        <TextBox DockPanel.Dock="Top" Margin="16,16,16,4" PlaceholderText="Search equipment" Text="{Binding Filter}"
+                 AutomationProperties.Name="Search equipment" />
+        <Button DockPanel.Dock="Bottom" Margin="16,8,16,16" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                Content="Clear filters" Command="{Binding ClearFiltersCommand}" />
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding FilterGroups}" Margin="16,0" />
+        </ScrollViewer>
+      </DockPanel>
+
+      <DockPanel Grid.Column="1" Background="{DynamicResource StageBrush}">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="24,16,24,4">
+          <TextBlock Classes="data muted" FontSize="13" VerticalAlignment="Center" Text="{Binding ShownTitle}" />
+          <Button Grid.Column="1" Margin="0,0,12,0" Content="{Binding ImageDownloadTitle}" IsVisible="{Binding CanDownloadImages}"
+                  Command="{Binding DownloadImagesCommand}" />
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="muted" Text="Sort" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding SortOptions}" SelectedItem="{Binding SelectedSort}" MinWidth="180"
+                      AutomationProperties.Name="Sort equipment">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:SortOption">
+                  <TextBlock Text="{Binding Title}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+        </Grid>
+        <StackPanel DockPanel.Dock="Top" Margin="24,4,24,0" Spacing="6"
+                    IsVisible="{Binding ImageMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Classes="muted" FontSize="13" Text="{Binding ImageMessage}" TextWrapping="Wrap" />
+          <ProgressBar IsIndeterminate="True" IsVisible="{Binding ImagesBusy}" />
+        </StackPanel>
+
+        <Panel>
+          <ItemsControl x:Name="CardList" ItemsSource="{Binding CardRows}" Padding="24,12,12,24"
+                        XYFocus.NavigationModes="Keyboard" AutomationProperties.Name="Equipment">
+            <ItemsControl.Template>
+              <ControlTemplate>
+                <ScrollViewer>
+                  <ItemsPresenter Margin="{TemplateBinding Padding}" />
+                </ScrollViewer>
+              </ControlTemplate>
+            </ItemsControl.Template>
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <VirtualizingStackPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:EquipmentCardRow">
+                <ItemsControl ItemsSource="{Binding Cards}" Margin="0,0,0,10">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="{x:Static vm:EquipmentViewModel.CardSpacing}" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:EquipmentCard">
+                      <Button Classes="card" Command="{Binding #Root.((vm:EquipmentViewModel)DataContext).SelectCommand}"
+                              CommandParameter="{Binding Equipment}" AutomationProperties.Name="{Binding Equipment.Name}"
+                              ToolTip.Tip="{Binding Equipment.Name}">
+                        <!-- The outer ring marks the piece shown in the detail pane. -->
+                        <Border Classes="selectRing" Classes.selected="{Binding IsSelected}">
+                          <Border Width="{x:Static vm:EquipmentViewModel.CardWidth}" CornerRadius="4" BorderThickness="2" ClipToBounds="True"
+                                  BorderBrush="{Binding Equipment.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
+                                  Background="{Binding Equipment.Tier, Converter={x:Static controls:RarityBrushes.Background}}">
+                            <DockPanel>
+                              <Border DockPanel.Dock="Bottom" Background="#D9101318" Padding="5,3" Height="38">
+                                <TextBlock Text="{Binding Equipment.Name}" Foreground="White" FontSize="12" FontWeight="SemiBold"
+                                           TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" LineHeight="15"
+                                           TextAlignment="Center" VerticalAlignment="Center" />
+                              </Border>
+                              <Panel Height="104">
+                                <Image Source="{Binding Image}" Stretch="Uniform" Margin="6,6,6,14" />
+                                <TextBlock Text="?" IsVisible="{Binding !HasImage}" FontSize="44" FontWeight="Bold" Foreground="#B3FFFFFF"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Border Classes="cardTag" HorizontalAlignment="Left" CornerRadius="0,0,4,0"
+                                        IsVisible="{Binding Equipment.TechCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                  <TextBlock Text="{Binding Equipment.TechCode}" />
+                                </Border>
+                                <TextBlock Classes="stars" Text="{Binding Equipment.Stars}" />
+                              </Panel>
+                            </DockPanel>
+                          </Border>
+                        </Border>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <StackPanel IsVisible="{Binding NoMatches}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+            <TextBlock Classes="muted" Text="No equipment matches these filters." />
+            <Button HorizontalAlignment="Center" Content="Clear filters" Command="{Binding ClearFiltersCommand}" />
+          </StackPanel>
+        </Panel>
+      </DockPanel>
+
+      <!-- The selected piece -->
+      <ScrollViewer Grid.Column="2">
+        <controls:ChamferBorder Classes="panel" Padding="28,26">
+          <Panel>
+            <TextBlock Classes="muted" IsVisible="{Binding !HasSelection}" TextWrapping="Wrap"
+                       Text="Pick a piece of equipment to see its stats at +0 and fully enhanced." />
+            <StackPanel IsVisible="{Binding HasSelection}" Spacing="24">
+              <StackPanel Orientation="Horizontal" Spacing="18">
+                <Border Width="112" Height="112" CornerRadius="4" BorderThickness="2" ClipToBounds="True" VerticalAlignment="Top"
+                        BorderBrush="{Binding SelectedEquipment.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
+                        Background="{Binding SelectedEquipment.Tier, Converter={x:Static controls:RarityBrushes.Background}}">
+                  <Panel>
+                    <Image Source="{Binding SelectedCard.Image}" Stretch="Uniform" Margin="8,8,8,16" />
+                    <TextBlock Text="?" IsVisible="{Binding !SelectedCard.HasImage}" FontSize="44" FontWeight="Bold"
+                               Foreground="#B3FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <TextBlock Classes="stars" Text="{Binding SelectedEquipment.Stars}" />
+                  </Panel>
+                </Border>
+                <StackPanel Spacing="4" VerticalAlignment="Center" MaxWidth="210">
+                  <TextBlock Classes="data muted" FontSize="12" Text="{Binding SelectedEquipment.Id, StringFormat='EQUIPMENT {0}'}" />
+                  <TextBlock Text="{Binding SelectedEquipment.TypeName}" />
+                  <TextBlock Classes="muted" Text="{Binding SelectedEquipment.NationName}" />
+                  <TextBlock Classes="accent" Text="{Binding SelectedEquipment.TechTitle}" />
+                </StackPanel>
+              </StackPanel>
+              <TextBlock Text="{Binding SelectedEquipment.Name}" FontFamily="{DynamicResource DisplayFont}" FontSize="26"
+                         FontWeight="Bold" TextWrapping="Wrap" />
+
+              <StackPanel>
+                <TextBlock Classes="heading" Text="Stats" />
+                <Grid ColumnDefinitions="*,80,80" Margin="0,0,0,6">
+                  <TextBlock Grid.Column="1" Classes="muted data" FontSize="12" Text="+0" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="2" Classes="muted data" FontSize="12" HorizontalAlignment="Right"
+                             Text="{Binding SelectedEquipment.MaxLevel, StringFormat='+{0}'}" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding SelectedEquipment.Stats}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="data:EquipmentStat">
+                      <Grid ColumnDefinitions="*,80,80" Margin="0,4">
+                        <TextBlock Text="{Binding Label}" />
+                        <TextBlock Grid.Column="1" Classes="data" Text="{Binding Base}" HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="2" Classes="data value" Text="{Binding Max}" HorizontalAlignment="Right" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,10,0,0"
+                      IsVisible="{Binding SelectedEquipment.Speciality, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                  <TextBlock Classes="muted" Text="Speciality" />
+                  <TextBlock Grid.Column="1" Text="{Binding SelectedEquipment.Speciality}" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,6,0,0"
+                      IsVisible="{Binding SelectedEquipment.Ammo, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                  <TextBlock Classes="muted" Text="Ammo" />
+                  <TextBlock Grid.Column="1" Text="{Binding SelectedEquipment.Ammo}" />
+                </Grid>
+              </StackPanel>
+
+              <StackPanel IsVisible="{Binding SelectedEquipment.IsEquippable}">
+                <TextBlock Classes="heading" Text="Equippable by" />
+                <ItemsControl ItemsSource="{Binding SelectedEquipment.UsableBy}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel ItemSpacing="6" LineSpacing="6" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                      <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="8,3">
+                        <TextBlock Text="{Binding}" FontSize="13" />
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <StackPanel IsVisible="{Binding SelectedEquipment.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Classes="heading" Text="Description" />
+                <TextBlock Text="{Binding SelectedEquipment.Description}" TextWrapping="Wrap" LineHeight="22" />
+              </StackPanel>
+            </StackPanel>
+          </Panel>
+        </controls:ChamferBorder>
+      </ScrollViewer>
+    </Grid>
+  </Panel>
+</UserControl>

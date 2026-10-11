@@ -7,11 +7,10 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AzlDl.App.ViewModels;
 
-// One card in the ship gallery. ImagePath is null until the card image is downloaded; the card then shows a "?".
-public sealed partial class ShipCard(ShipInfo ship, string? imagePath) : ObservableObject
+// A gallery card whose image is decoded in the background. ImagePath is null until the image is downloaded; the card
+// then shows a "?".
+public abstract partial class GalleryCard(string? imagePath) : ObservableObject
 {
-    public ShipInfo Ship { get; } = ship;
-
     public string? ImagePath { get; private set; } = imagePath;
 
     public bool HasImage => ImagePath is not null;
@@ -28,12 +27,31 @@ public sealed partial class ShipCard(ShipInfo ship, string? imagePath) : Observa
     internal void ImageLoaded() => OnPropertyChanged(nameof(Image));
 }
 
-// The gallery is laid out as rows of cards so the list can virtualize; the row length follows the window width.
+public sealed class ShipCard(ShipInfo ship, string? imagePath) : GalleryCard(imagePath)
+{
+    public ShipInfo Ship { get; } = ship;
+}
+
+public sealed partial class EquipmentCard(EquipmentInfo equipment, string? imagePath) : GalleryCard(imagePath)
+{
+    public EquipmentInfo Equipment { get; } = equipment;
+
+    // The equipment shown in the detail pane.
+    [ObservableProperty]
+    private bool isSelected;
+}
+
+// Galleries are laid out as rows of cards so the list can virtualize; the row length follows the window width.
 public sealed record ShipCardRow(IReadOnlyList<ShipCard> Cards);
 
+public sealed record EquipmentCardRow(IReadOnlyList<EquipmentCard> Cards);
+
 // A filter value. Chips in one group combine with OR, groups with AND.
-public sealed partial class FilterChip(string label, string code, Func<ShipInfo, bool> matches, RarityTier? tier = null) : ObservableObject
+public sealed partial class FilterChip(string label, string code, Func<object, bool> matches, RarityTier? tier = null) : ObservableObject
 {
+    public static FilterChip For<T>(string label, string code, Func<T, bool> matches, RarityTier? tier = null) =>
+        new(label, code, item => item is T value && matches(value), tier);
+
     public string Label { get; } = label;
 
     // A short code shown before the label (SSR, DD); empty when the label says it all.
@@ -46,7 +64,7 @@ public sealed partial class FilterChip(string label, string code, Func<ShipInfo,
 
     public bool HasTier => Tier is not null;
 
-    public Func<ShipInfo, bool> Matches { get; } = matches;
+    public Func<object, bool> Matches { get; } = matches;
 
     [ObservableProperty]
     private bool isChecked;
@@ -78,7 +96,7 @@ public sealed partial class FilterGroup : ObservableObject
     // "All" reads as pressed while no chip in the group is.
     public bool ShowsAll => Chips.All(c => !c.IsChecked);
 
-    public bool Matches(ShipInfo ship) => ShowsAll || Chips.Any(c => c.IsChecked && c.Matches(ship));
+    public bool Matches(object item) => ShowsAll || Chips.Any(c => c.IsChecked && c.Matches(item));
 
     [RelayCommand]
     public void Clear()
@@ -92,7 +110,9 @@ public sealed partial class FilterGroup : ObservableObject
     }
 }
 
-public sealed record SortOption(string Title, Func<IEnumerable<ShipInfo>, IEnumerable<ShipInfo>> Sort);
+public record SortOption(string Title);
+
+public sealed record SortOption<T>(string Title, Func<IEnumerable<T>, IEnumerable<T>> Sort) : SortOption(Title);
 
 // Decoded card images, shared by every card and kept small: images are decoded at card size on a worker thread, and
 // only the most recently used ones are kept, so scrolling the whole roster doesn't hold every image in memory.
@@ -103,11 +123,11 @@ internal static class CardImages
 
     private static readonly Dictionary<string, LinkedListNode<(string Path, Bitmap Image)>> Loaded = new(StringComparer.OrdinalIgnoreCase);
     private static readonly LinkedList<(string Path, Bitmap Image)> Recent = new();
-    private static readonly Dictionary<string, List<ShipCard>> Pending = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, List<GalleryCard>> Pending = new(StringComparer.OrdinalIgnoreCase);
 
     // Called on the UI thread. Returns the image when it is decoded; otherwise starts decoding it and tells the card
     // once it is ready.
-    public static Bitmap? Get(string path, ShipCard card)
+    public static Bitmap? Get(string path, GalleryCard card)
     {
         if (Loaded.TryGetValue(path, out var node))
         {

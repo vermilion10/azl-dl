@@ -124,7 +124,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     public ObservableCollection<FilterGroup> FilterGroups { get; } = [];
 
-    public IReadOnlyList<SortOption> SortOptions { get; } =
+    public IReadOnlyList<SortOption<ShipInfo>> SortOptions { get; } =
     [
         new("Rarity, high to low", ships => ships.OrderByDescending(s => s.Rarity).ThenBy(s => s.GroupId)),
         new("Rarity, low to high", ships => ships.OrderBy(s => s.Rarity).ThenBy(s => s.GroupId)),
@@ -134,7 +134,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     ];
 
     [ObservableProperty]
-    private SortOption? selectedSort;
+    private SortOption<ShipInfo>? selectedSort;
 
     public ObservableCollection<ShipCardRow> CardRows { get; } = [];
 
@@ -335,7 +335,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     partial void OnFilterChanged(string value) => ApplyFilter();
 
-    partial void OnSelectedSortChanged(SortOption? value) => ApplyFilter();
+    partial void OnSelectedSortChanged(SortOption<ShipInfo>? value) => ApplyFilter();
 
     partial void OnColumnsChanged(int value) => BuildRows();
 
@@ -384,19 +384,19 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
         string[] tierCodes = ["N", "R", "SR", "SSR", "UR"];
         var rarities = all.GroupBy(s => s.Rarity).OrderBy(g => g.Key)
-            .Select(g => new FilterChip(g.First().RarityName, tierCodes[g.Key - 2], s => s.Rarity == g.Key, (RarityTier)(g.Key - 2)));
+            .Select(g => FilterChip.For<ShipInfo>(g.First().RarityName, tierCodes[g.Key - 2], s => s.Rarity == g.Key, (RarityTier)(g.Key - 2)));
 
         var collections = new (ShipCollection Collection, string Title)[]
         {
             (ShipCollection.Standard, "Standard"), (ShipCollection.Research, "Research"), (ShipCollection.Meta, "META"),
             (ShipCollection.Collab, "Collab"),
         }.Where(c => all.Any(s => s.Collection == c.Collection))
-            .Select(c => new FilterChip(c.Title, "", s => s.Collection == c.Collection,
+            .Select(c => FilterChip.For<ShipInfo>(c.Title, "", s => s.Collection == c.Collection,
                 c.Collection switch { ShipCollection.Research => RarityTier.Priority, ShipCollection.Meta => RarityTier.Meta, _ => null }));
 
         var roles = new (string Team, string Title)[] { ("vanguard", "Vanguard"), ("main", "Main fleet"), ("submarine", "Submarine") }
             .Where(r => all.Any(s => s.TeamType == r.Team))
-            .Select(r => new FilterChip(r.Title, "", s => s.TeamType == r.Team));
+            .Select(r => FilterChip.For<ShipInfo>(r.Title, "", s => s.TeamType == r.Team));
 
         // Some hull names repeat across fleet roles (DDG, Sailing Frigate); those say which fleet they sail in.
         var types = all.GroupBy(s => s.TypeId).OrderBy(g => g.Key).ToList();
@@ -405,11 +405,11 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         {
             var name = g.First().TypeName.Trim();
             var team = g.First().TeamType switch { "vanguard" => "Vanguard", "main" => "Main fleet", "submarine" => "Submarine", var t => t };
-            return new FilterChip(typeNames.Contains(name) ? $"{name} ({team})" : name, g.First().HullCode, s => s.TypeId == g.Key);
+            return FilterChip.For<ShipInfo>(typeNames.Contains(name) ? $"{name} ({team})" : name, g.First().HullCode, s => s.TypeId == g.Key);
         });
 
         var factions = all.GroupBy(s => s.NationName).OrderBy(g => g.Min(s => s.NationId))
-            .Select(g => new FilterChip(g.Key, "", s => s.NationName == g.Key));
+            .Select(g => FilterChip.For<ShipInfo>(g.Key, "", s => s.NationName == g.Key));
 
         FilterGroups.Clear();
         foreach (var (title, chips) in new[] { ("Rarity", rarities), ("Collection", collections), ("Fleet", roles), ("Hull type", hulls), ("Faction", factions) })

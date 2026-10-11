@@ -10,6 +10,9 @@
     <DataTemplate DataType="vm:ShipsViewModel">
       <views:ShipsView />
     </DataTemplate>
+    <DataTemplate DataType="vm:EquipmentViewModel">
+      <views:EquipmentView />
+    </DataTemplate>
     <DataTemplate DataType="vm:StoryViewModel">
       <views:StoryView />
     </DataTemplate>
