@@ -6,6 +6,8 @@ namespace AzlDl.Core.Art;
 
 // Gets single assets onto disk on demand: downloads a bundle (and a painting's _tex partner) when it isn't current,
 // then extracts it under <data>/art. Uses the same folder layout as the command-line tool.
+// Bundle paths on the CDN are all lower case, while some painting names aren't (U101, HDN101), so paths are lowered
+// before they are looked up or used as folders.
 public sealed class AssetFetcher(HttpClient http, ClientRegion region, string dataFolder)
 {
     public string AssetFolder => Path.Combine(dataFolder, "AssetBundles");
@@ -15,7 +17,8 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     public string PaintingPath(string painting) => Path.Combine(ArtFolder, "painting", painting + ".png");
 
     // Folder an extracted bundle's files land in (art/char/qiye_5, art/live2d/qiye_7, ...).
-    public string FolderFor(string bundlePath) => Path.Combine(ArtFolder, bundlePath.Replace('/', Path.DirectorySeparatorChar));
+    public string FolderFor(string bundlePath) =>
+        Path.Combine(ArtFolder, bundlePath.ToLowerInvariant().Replace('/', Path.DirectorySeparatorChar));
 
     public async Task<string> FetchPaintingAsync(string painting, CancellationToken cancellationToken = default)
     {
@@ -26,14 +29,14 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         }
 
         // A layered painting's prefab names its other layers, which are downloaded before the painting is extracted.
-        var found = await FetchAsync(AssetCategory.Painting, [$"painting/{painting}", $"painting/{painting}_tex"], cancellationToken,
-            extract: false);
+        var bundle = $"painting/{painting.ToLowerInvariant()}";
+        var found = await FetchAsync(AssetCategory.Painting, [bundle, bundle + "_tex"], cancellationToken, extract: false);
         if (found.Count == 0)
         {
             throw new FileNotFoundException($"The game has no painting named {painting}.");
         }
 
-        var prefab = Path.Combine(AssetFolder, "painting", painting);
+        var prefab = Path.Combine(AssetFolder, "painting", painting.ToLowerInvariant());
         var layers = File.Exists(prefab) ? PaintingComposer.ReadLayers(prefab).Where(l => l.Name != painting).ToList() : [];
         if (layers.Count > 0)
         {
@@ -41,7 +44,7 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
                 extract: false);
         }
 
-        var source = found.Any(r => r.Path == $"painting/{painting}_tex") ? $"painting/{painting}_tex" : $"painting/{painting}";
+        var source = found.Any(r => r.Path == bundle + "_tex") ? bundle + "_tex" : bundle;
         Extract([source]);
         return File.Exists(target) ? target : throw new FileNotFoundException($"Extracting {painting} produced no painting.");
     }
@@ -87,6 +90,45 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         return found;
     }
 
+    // The card image of a skin (shipyardicon/<painting>), or of a piece of equipment (equips/<icon>), once extracted.
+    public string ShipImagePath(string painting) => ImageIn(FolderFor(ShipImageFolder + painting), painting);
+
+    public string EquipmentImagePath(string icon) => ImageIn(FolderFor(EquipmentImageFolder + icon), icon);
+
+    // An icon bundle holds one texture, usually named like the bundle but not always in the same case.
+    private static string ImageIn(string folder, string name)
+    {
+        var expected = Path.Combine(folder, name + ".png");
+        return File.Exists(expected) || !Directory.Exists(folder)
+            ? expected
+            : Directory.EnumerateFiles(folder, "*.png").FirstOrDefault() ?? expected;
+    }
+
+    public const string ShipImageFolder = "shipyardicon/";
+
+    public const string EquipmentImageFolder = "equips/";
+
+    // Downloads and extracts the given card images (bundle paths such as shipyardicon/qiye) that aren't on disk yet.
+    // Names the game doesn't have are skipped. Returns how many were fetched.
+    public async Task<int> FetchImagesAsync(IReadOnlyCollection<string> bundlePaths, CancellationToken cancellationToken = default)
+    {
+        var missing = bundlePaths.Where(b => !Directory.Exists(FolderFor(b)) || !Directory.EnumerateFiles(FolderFor(b), "*.png").Any())
+            .ToList();
+        if (missing.Count == 0)
+        {
+            return 0;
+        }
+
+        var found = await FetchAsync(AssetCategory.Azl, missing, cancellationToken, extract: false);
+        var result = new ArtExtractor(AssetFolder, ArtFolder).Extract(found.Select(r => r.Path), Environment.ProcessorCount);
+        if (result.Errors.Count > 0)
+        {
+            throw new InvalidDataException(result.Errors[0]);
+        }
+
+        return found.Count;
+    }
+
     // Returns the extracted folder, or null when the game has no such bundle (a skin without a Live2D model, say).
     public async Task<string?> FetchBundleAsync(AssetCategory category, string bundlePath, CancellationToken cancellationToken = default)
     {
@@ -104,7 +146,7 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     // resource bundle the game has for it (spinepainting/<name>_res, or a shorter name's for variants).
     public async Task<string?> FetchDynamicSkinAsync(string painting, CancellationToken cancellationToken = default)
     {
-        var prefab = DynamicSkinReader.Folder + painting;
+        var prefab = DynamicSkinReader.Folder + painting.ToLowerInvariant();
         var folder = FolderFor(prefab);
         if (File.Exists(Path.Combine(folder, DynamicSkinReader.LayoutFileName)))
         {
@@ -141,7 +183,7 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
 
         var cdn = new CdnClient(http, region, Path.Combine(dataFolder, "cache"));
         var all = await cdn.GetHashListAsync(version, cancellationToken);
-        var wanted = new HashSet<string>(choose(all), StringComparer.Ordinal);
+        var wanted = new HashSet<string>(choose(all).Select(p => p.ToLowerInvariant()), StringComparer.Ordinal);
         var rows = all.Where(r => wanted.Contains(r.Path)).ToList();
         if (rows.Count == 0)
         {

@@ -24,6 +24,30 @@ public enum AnimationSet
 // GroupIndex is the skin's place in its ship group (0 for the default skin); voice cues of other skins end in _<index>.
 public sealed record SkinInfo(long Id, string Name, string Painting, int Number, int GroupIndex = 0);
 
+// How the game frames a ship card. Research ships take Priority (Super Rare) or Decisive (Ultra Rare) frames and META
+// ships their own, whatever their rarity.
+public enum RarityTier
+{
+    Common,
+    Rare,
+    Elite,
+    SuperRare,
+    UltraRare,
+    Priority,
+    Decisive,
+    Meta,
+}
+
+// Where a ship comes from: research (ship_data_blueprint), META (nation 97), a collaboration (nations 101 and up) or
+// the standard roster.
+public enum ShipCollection
+{
+    Standard,
+    Research,
+    Meta,
+    Collab,
+}
+
 // One ship as the game groups it: all limit-break stages share a group id; the catalog shows the fully limit-broken
 // stage, which is the row with the highest star count.
 public sealed record ShipInfo(
@@ -37,7 +61,32 @@ public sealed record ShipInfo(
     string RarityName,
     IReadOnlyList<StatValue> Stats,
     IReadOnlyList<SkillInfo> Skills,
-    IReadOnlyList<SkinInfo> Skins);
+    IReadOnlyList<SkinInfo> Skins,
+    long TypeId,
+    long NationId,
+    string TeamType,
+    ShipCollection Collection,
+    RarityTier Tier)
+{
+    // The hull type's usual abbreviation (DD, CL, BB, ...); the game shows an icon instead.
+    public string HullCode => ShipCatalog.HullCode(TypeId);
+
+    // The letters the game prints on the card frame.
+    public string TierCode => Tier switch
+    {
+        RarityTier.Common => "N",
+        RarityTier.Rare => "R",
+        RarityTier.Elite => "SR",
+        RarityTier.SuperRare => "SSR",
+        RarityTier.UltraRare => "UR",
+        RarityTier.Priority => "PR",
+        RarityTier.Decisive => "DR",
+        _ => "META",
+    };
+
+    // The default skin's painting, which names the ship's card image.
+    public string Painting => Skins.Count > 0 ? Skins[0].Painting : "";
+}
 
 // Reads the JSON tables written by the config and sharecfg commands and joins them into ships.
 // Every label comes from game data: hull types from ship_data_by_type, stat names from attribute_info_by_type,
@@ -51,7 +100,7 @@ public sealed class ShipCatalog
         [3] = "word_shipNation_chongYing", [4] = "word_shipNation_tieXue", [5] = "word_shipNation_dongHuang",
         [6] = "word_shipNation_saDing", [7] = "word_shipNation_beiLian", [8] = "word_shipNation_ziyou",
         [9] = "word_shipNation_weixi", [10] = "word_shipNation_yuanwei", [11] = "word_shipNation_yujinwangguo",
-        [12] = "word_shipNation_jinghuanlianmeng", [96] = "word_shipNation_mot", [97] = "word_shipNation_meta",
+        [12] = "word_shipNation_jinghuanlianmeng", [96] = "word_shipNation_mot", [97] = "word_shipNation_meta_index",
         [98] = "word_shipNation_other", [101] = "word_shipNation_np", [102] = "word_shipNation_bili",
         [103] = "word_shipNation_um", [104] = "word_shipNation_ai", [105] = "word_shipNation_holo",
         [106] = "word_shipNation_doa", [107] = "word_shipNation_imas", [108] = "word_shipNation_ssss",
@@ -59,6 +108,19 @@ public sealed class ShipCatalog
         [112] = "word_shipNation_brs", [113] = "word_shipNation_yumia", [114] = "word_shipNation_danmachi",
         [115] = "word_shipNation_dal", [117] = "word_shipNation_nierautomata",
     };
+
+    // Collaboration nations start here (Neptune, Bilibili, hololive, ...).
+    private const long FirstCollabNation = 101;
+    private const long MetaNation = 97;
+
+    private static readonly Dictionary<long, string> HullCodes = new()
+    {
+        [1] = "DD", [2] = "CL", [3] = "CA", [4] = "BC", [5] = "BB", [6] = "CVL", [7] = "CV", [8] = "SS", [9] = "CAV",
+        [10] = "BBV", [11] = "CLT", [12] = "AR", [13] = "BM", [17] = "SSV", [18] = "CB", [19] = "AE", [20] = "DDG",
+        [21] = "DDG", [22] = "IXs", [23] = "IXv", [24] = "IXm",
+    };
+
+    public static string HullCode(long type) => HullCodes.GetValueOrDefault(type, "");
 
     // attrs index 6 is armor, which the game shows as an armor type rather than a number.
     private const int ArmorAttributeIndex = 6;
@@ -109,6 +171,10 @@ public sealed class ShipCatalog
         var types = Read("sharecfg/ship_data_by_type.json");
         var attributes = Read("sharecfg/attribute_info_by_type.json");
         var skills = Read("sharecfg/skill_data_template.json");
+        var blueprintFile = Path.Combine(dataFolder, "sharecfg/ship_data_blueprint.json");
+        var research = File.Exists(blueprintFile)
+            ? Read("sharecfg/ship_data_blueprint.json").Select(p => p.Key).ToHashSet(StringComparer.Ordinal)
+            : [];
         var words = Read("config/ship_skin_words.json");
         var voices = Read("sharecfg/character_voice.json");
 
@@ -202,6 +268,24 @@ public sealed class ShipCatalog
             var stats = (JsonObject)statistics[id.ToString()]!;
             var type = Long(stats["type"]);
             var rarity = (int)Long(stats["rarity"]);
+            var nation = Long(stats["nationality"]);
+
+            // Rarities run from 2 (Common) to 6 (Ultra Rare); other values are boss and test rows.
+            if (rarity is < 2 or > 6)
+            {
+                continue;
+            }
+
+            var collection = research.Contains(group.ToString()) ? ShipCollection.Research
+                : nation == MetaNation ? ShipCollection.Meta
+                : nation >= FirstCollabNation ? ShipCollection.Collab
+                : ShipCollection.Standard;
+            var tier = collection switch
+            {
+                ShipCollection.Meta => RarityTier.Meta,
+                ShipCollection.Research => rarity >= 6 ? RarityTier.Decisive : RarityTier.Priority,
+                _ => (RarityTier)(rarity - 2),
+            };
             var attrs = stats["attrs"] as JsonArray;
 
             var values = new List<StatValue>();
@@ -229,16 +313,29 @@ public sealed class ShipCatalog
                 Text(stats["name"]),
                 Text(stats["english_name"]),
                 types[type.ToString()]?["type_name"]?.GetValue<string>() ?? $"Type {type}",
-                NationKeys.TryGetValue(Long(stats["nationality"]), out var nationKey) ? Tip(nationKey) : "",
+                NationName(nation, Tip),
                 rarity,
                 Tip($"index_rare{rarity}"),
                 values,
                 skillList,
-                skinsByGroup.GetValueOrDefault(group) ?? []));
+                skinsByGroup.GetValueOrDefault(group) ?? [],
+                type,
+                nation,
+                types[type.ToString()]?["team_type"]?.GetValue<string>() ?? "",
+                collection,
+                tier));
         }
 
         return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, live2DActions, expressions, live2DIdles);
     }
+
+    // The EN client still names the Bilibili collaboration in Chinese, so that one name is given here.
+    private static string NationName(long nation, Func<string, string> tip) => nation switch
+    {
+        102 => "Bilibili",
+        _ when NationKeys.TryGetValue(nation, out var key) => tip(key),
+        _ => tip("word_shipNation_other"),
+    };
 
     // A skin's voice lines. Skins only store the lines they change; the rest come from the ship's default skin, as
     // in the game. Idle lines are one '|'-separated "main" entry, listed as Main screen 1, 2, ...
