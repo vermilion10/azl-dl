@@ -330,7 +330,7 @@ public sealed class ShipCatalog
     }
 
     // The EN client still names the Bilibili collaboration in Chinese, so that one name is given here.
-    private static string NationName(long nation, Func<string, string> tip) => nation switch
+    internal static string NationName(long nation, Func<string, string> tip) => nation switch
     {
         102 => "Bilibili",
         _ when NationKeys.TryGetValue(nation, out var key) => tip(key),
