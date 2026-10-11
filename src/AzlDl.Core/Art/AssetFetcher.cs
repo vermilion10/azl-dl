@@ -104,6 +104,45 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
             : Directory.EnumerateFiles(folder, "*.png").FirstOrDefault() ?? expected;
     }
 
+    // Chibi heads used as avatars in Juustagram and Fleet Chat.
+    public string AvatarPath(string name) => ImageIn(FolderFor(AvatarFolder + name), name);
+
+    public const string AvatarFolder = "qicon/";
+
+    // Juustagram pictures aren't in bundles; the game loads them from its own image host, so only that host is used.
+    public const string PictureHost = "blhxusstatic.yo-star.com";
+
+    public string? PicturePath(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || uri.Host != PictureHost)
+        {
+            return null;
+        }
+
+        var name = string.Concat(Uri.UnescapeDataString(uri.Segments[^1]).Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-' ? c : '_'));
+        return name.Length == 0 ? null : Path.Combine(dataFolder, "juustagram", name);
+    }
+
+    // Downloads a Juustagram picture once. Returns null for addresses outside the game's image host.
+    public async Task<string?> FetchPictureAsync(string url, CancellationToken cancellationToken = default)
+    {
+        if (PicturePath(url) is not { } path)
+        {
+            return null;
+        }
+
+        if (!File.Exists(path))
+        {
+            var bytes = await http.GetByteArrayAsync(url, cancellationToken);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var partial = path + ".part";
+            await File.WriteAllBytesAsync(partial, bytes, cancellationToken);
+            File.Move(partial, path, overwrite: true);
+        }
+
+        return path;
+    }
+
     public const string ShipImageFolder = "shipyardicon/";
 
     public const string EquipmentImageFolder = "equips/";
