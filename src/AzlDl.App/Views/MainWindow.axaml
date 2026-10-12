@@ -13,6 +13,12 @@
     <DataTemplate DataType="vm:EquipmentViewModel">
       <views:EquipmentView />
     </DataTemplate>
+    <DataTemplate DataType="vm:JuustagramViewModel">
+      <views:JuustagramView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:FleetChatViewModel">
+      <views:FleetChatView />
+    </DataTemplate>
     <DataTemplate DataType="vm:StoryViewModel">
       <views:StoryView />
     </DataTemplate>

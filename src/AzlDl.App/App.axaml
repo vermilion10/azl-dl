@@ -36,5 +36,16 @@
         </ItemsControl>
       </StackPanel>
     </DataTemplate>
+    <!-- Round chibi-head avatars for Juustagram and Fleet Chat; the name's initial stands in until the image is downloaded. -->
+    <DataTemplate DataType="vm:Avatar">
+      <Border Classes="avatar" Width="40" Height="40" CornerRadius="20" ClipToBounds="True" Background="{DynamicResource StageBrush}"
+              BorderBrush="{DynamicResource LineBrush}" BorderThickness="1">
+        <Panel>
+          <TextBlock Text="{Binding Initial}" IsVisible="{Binding !HasImage}" FontWeight="SemiBold"
+                     Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+          <Image Source="{Binding Image}" Stretch="UniformToFill" />
+        </Panel>
+      </Border>
+    </DataTemplate>
   </Application.DataTemplates>
 </Application>

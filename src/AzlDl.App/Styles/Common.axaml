@@ -92,6 +92,11 @@
     <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
   </Style>
 
+  <!-- An avatar's initial keeps its own colour on a selected row, where it sits on the avatar, not on the accent. -->
+  <Style Selector="ListBox.picker ListBoxItem:selected Border.avatar TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+  </Style>
+
   <!-- Style cards in Settings: the chosen one gets an accent outline instead of a filled background. -->
   <Style Selector="ListBox.styles ListBoxItem">
     <Setter Property="Padding" Value="4" />
@@ -216,6 +221,63 @@
   </Style>
   <Style Selector="Border.selectRing.selected">
     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+
+  <!-- Replies the Commander can pick in Juustagram and Fleet Chat: outlined in the accent, since they are the next step. -->
+  <Style Selector="Button.reply">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="Padding" Value="14,8" />
+    <Setter Property="MinHeight" Value="40" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+  </Style>
+  <Style Selector="Button.reply TextBlock">
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="Button.reply:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
+  </Style>
+
+  <!-- Chat bubbles: the ships' on the surface colour, the Commander's in the accent, as messaging apps tell sides apart. -->
+  <Style Selector="Border.bubble">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="CornerRadius" Value="4,14,14,14" />
+    <Setter Property="Padding" Value="12,8" />
+    <Setter Property="MaxWidth" Value="560" />
+  </Style>
+  <Style Selector="Border.bubble.mine">
+    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="CornerRadius" Value="14,4,14,14" />
+  </Style>
+  <Style Selector="Border.bubble.mine TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
+  </Style>
+
+  <!-- A contact's chats, as chips. -->
+  <Style Selector="ListBox.topics">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="ListBox.topics ListBoxItem">
+    <Setter Property="Padding" Value="12,6" />
+    <Setter Property="MinHeight" Value="34" />
+    <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="ListBox.topics ListBoxItem:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+  </Style>
+  <Style Selector="ListBox.topics ListBoxItem:selected /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="ListBox.topics ListBoxItem:selected">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="ListBox.topics ListBoxItem:selected TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
   </Style>
 
   <!-- Back to the gallery: quiet, like the stage tabs next to it. -->

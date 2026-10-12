@@ -11,12 +11,16 @@ public sealed partial class MainViewModel : ObservableObject
 {
     private bool storyLoaded;
     private bool equipmentLoaded;
+    private bool juustagramLoaded;
+    private bool fleetChatLoaded;
     private bool assetsLoaded;
 
     public MainViewModel(Application app, AppSettings settings)
     {
         Ships = new ShipsViewModel(settings);
         Equipment = new EquipmentViewModel(settings);
+        Juustagram = new JuustagramViewModel(settings);
+        FleetChat = new FleetChatViewModel(settings);
         Story = new StoryViewModel(settings);
         Assets = new AssetsViewModel(settings);
         Sync = new SyncViewModel(settings, ReloadDataAsync);
@@ -27,17 +31,24 @@ public sealed partial class MainViewModel : ObservableObject
         });
 
         var sync = new Section("Sync", Sync);
-        Sections = [new Section("Ships", Ships), new Section("Equipment", Equipment), new Section("Story", Story), new Section("Assets", Assets), sync, new Section("Settings", SettingsPage)];
+        Sections = [new Section("Ships", Ships), new Section("Equipment", Equipment), new Section("Juustagram", Juustagram),
+            new Section("Fleet Chat", FleetChat), new Section("Story", Story), new Section("Assets", Assets), sync, new Section("Settings", SettingsPage)];
         selectedSection = Sections[0];
         Ships.OpenSync = () => SelectedSection = sync;
         Story.OpenSync = () => SelectedSection = sync;
         Equipment.OpenSync = () => SelectedSection = sync;
+        Juustagram.OpenSync = () => SelectedSection = sync;
+        FleetChat.OpenSync = () => SelectedSection = sync;
         Assets.OpenSync = () => SelectedSection = sync;
     }
 
     public ShipsViewModel Ships { get; }
 
     public EquipmentViewModel Equipment { get; }
+
+    public JuustagramViewModel Juustagram { get; }
+
+    public FleetChatViewModel FleetChat { get; }
 
     public StoryViewModel Story { get; }
 
@@ -52,7 +63,8 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private Section selectedSection;
 
-    // Equipment and the story archive take a moment to read, so they load the first time they're opened. The asset list is read again
+    // Equipment, Juustagram, Fleet Chat and the story archive take a moment to read, so they load the first time they're
+    // opened. The asset list is read again
     // on every visit, since ship pages and Sync add bundles in the meantime.
     partial void OnSelectedSectionChanged(Section value)
     {
@@ -60,6 +72,16 @@ public sealed partial class MainViewModel : ObservableObject
         {
             equipmentLoaded = true;
             _ = Equipment.LoadAsync();
+        }
+        else if (value.Page == Juustagram && !juustagramLoaded)
+        {
+            juustagramLoaded = true;
+            _ = Juustagram.LoadAsync();
+        }
+        else if (value.Page == FleetChat && !fleetChatLoaded)
+        {
+            fleetChatLoaded = true;
+            _ = FleetChat.LoadAsync();
         }
         else if (value.Page == Story && !storyLoaded)
         {
@@ -79,6 +101,16 @@ public sealed partial class MainViewModel : ObservableObject
         if (equipmentLoaded)
         {
             await Equipment.LoadAsync();
+        }
+
+        if (juustagramLoaded)
+        {
+            await Juustagram.LoadAsync();
+        }
+
+        if (fleetChatLoaded)
+        {
+            await FleetChat.LoadAsync();
         }
 
         if (storyLoaded)

@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:data="using:AzlDl.Core.Data"
+             x:Class="AzlDl.App.Views.FleetChatView"
+             x:Name="Root"
+             x:DataType="vm:FleetChatViewModel">
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="Fleet Chat isn't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="340,*">
+      <DockPanel Background="{DynamicResource SurfaceBrush}">
+        <TextBox DockPanel.Dock="Top" Margin="16,16,16,8" PlaceholderText="Search chats" Text="{Binding Filter}"
+                 AutomationProperties.Name="Search chats" />
+        <ListBox Classes="picker" ItemsSource="{Binding Contacts}" SelectedItem="{Binding SelectedContact}" AutomationProperties.Name="Chats">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ContactItem">
+              <DockPanel>
+                <ContentControl DockPanel.Dock="Left" Content="{Binding Avatar}" Margin="0,0,12,0" />
+                <StackPanel VerticalAlignment="Center" Spacing="1">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <DockPanel Grid.Column="1" Background="{DynamicResource StageBrush}">
+        <!-- The contact's chats, and when each unlocks in the game -->
+        <StackPanel DockPanel.Dock="Top" Margin="24,14,24,6" Spacing="6">
+          <TextBlock Text="{Binding SelectedContact.Title}" FontFamily="{DynamicResource DisplayFont}" FontSize="22" FontWeight="Bold" />
+          <ListBox Classes="topics" ItemsSource="{Binding Topics}" SelectedItem="{Binding SelectedTopic}" AutomationProperties.Name="Chat topics">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel ItemSpacing="6" LineSpacing="6" />
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="data:ChatTopic">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Classes="muted" FontSize="13" Text="{Binding SelectedTopic.Unlock, StringFormat='Unlocks: {0}'}" IsVisible="{Binding HasTopic}" />
+        </StackPanel>
+
+        <!-- The Commander's turn: the replies the game offers, or the end of the chat -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}"
+                BorderThickness="0,1,0,0" Padding="24,12" IsVisible="{Binding HasTopic}">
+          <Panel>
+            <StackPanel IsVisible="{Binding IsWaiting}" Spacing="8">
+              <TextBlock Classes="muted" FontSize="13" Text="Reply" />
+              <ItemsControl ItemsSource="{Binding Replies}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel ItemSpacing="8" LineSpacing="8" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="data:ChatOption">
+                    <Button Classes="reply" Content="{Binding Text}"
+                            Command="{Binding #Root.((vm:FleetChatViewModel)DataContext).AnswerCommand}" CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <DockPanel IsVisible="{Binding IsFinished}">
+              <Button DockPanel.Dock="Right" Content="Start over" Command="{Binding RestartCommand}" />
+              <TextBlock Classes="muted" VerticalAlignment="Center" Text="End of chat. Start over to pick other replies." />
+            </DockPanel>
+          </Panel>
+        </Border>
+
+        <ScrollViewer x:Name="MessageScroll">
+          <ItemsControl ItemsSource="{Binding Messages}" Margin="24,8,24,16" MaxWidth="900">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:MessageItem">
+                <Panel Margin="0,0,0,8">
+                  <DockPanel IsVisible="{Binding IsThem}" HorizontalAlignment="Left">
+                    <ContentControl DockPanel.Dock="Left" Content="{Binding Avatar}" VerticalAlignment="Top" Margin="0,0,10,0" />
+                    <StackPanel Spacing="3">
+                      <TextBlock Classes="muted" FontSize="12" Text="{Binding Name}" IsVisible="{Binding ShowsName}" />
+                      <Border Classes="bubble">
+                        <TextBlock Text="{Binding Shown}" TextWrapping="Wrap" />
+                      </Border>
+                    </StackPanel>
+                  </DockPanel>
+                  <Border Classes="bubble mine" IsVisible="{Binding IsCommander}" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding Shown}" TextWrapping="Wrap" />
+                  </Border>
+                  <TextBlock IsVisible="{Binding IsNotice}" Classes="muted" FontSize="13" Text="{Binding Shown}"
+                             HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="40,4" />
+                </Panel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Grid>
+  </Panel>
+</UserControl>

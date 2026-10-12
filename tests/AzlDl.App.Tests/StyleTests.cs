@@ -261,6 +261,91 @@ public class StyleTests
         window.Close();
     }
 
+    // Juustagram shows a post with its picture from the game's image host, its comments and replies, and the replies the
+    // Commander can leave, each with the author's answer.
+    [AvaloniaFact]
+    public async Task Juustagram_shows_posts_comments_and_replies()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.ChartRoom, Theme = ThemeMode.Light, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is JuustagramViewModel);
+        var juustagram = main.Juustagram;
+        await WaitUntil(() => juustagram.IsReady || juustagram.HasProblem);
+        Assert.True(juustagram.IsReady, juustagram.Message);
+        Assert.DoesNotContain(juustagram.Posts, p => p.Post.Message == "Future Content");
+
+        // Shangri-La's post about Essex at the barbecue.
+        juustagram.SelectedPost = juustagram.Posts.Single(p => p.Post.Id == 102);
+        Assert.StartsWith("Essex is currently concentrating", juustagram.SelectedPost.Post.Message);
+        Assert.NotEmpty(juustagram.Comments);
+        Assert.True(juustagram.CanReply);
+        await WaitUntil(() => juustagram.Picture is not null || juustagram.PictureMessage.StartsWith("The picture didn't", StringComparison.Ordinal));
+        Assert.NotNull(juustagram.Picture);
+
+        juustagram.ChooseCommand.Execute(juustagram.Options[0]);
+        Assert.False(juustagram.CanReply);
+        Assert.Equal("Commander", juustagram.Reply!.Name);
+        Assert.Single(juustagram.Reply.Replies);
+        await WaitUntil(() => juustagram.Comments.All(c => !c.Avatar.HasImage || c.Avatar.Image is not null)
+                              && juustagram.PostAvatar?.Image is not null);
+        SaveFrame(window, "juustagram-ChartRoom-Light.png");
+        window.Close();
+    }
+
+    // Fleet Chat plays a chat up to the Commander's reply and continues down the branch that reply picks.
+    [AvaloniaFact]
+    public async Task Fleet_chat_follows_the_picked_replies()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.RegistryBook, Theme = ThemeMode.Dark, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+        main.SelectedSection = main.Sections.Single(s => s.Page is FleetChatViewModel);
+        var chat = main.FleetChat;
+        await WaitUntil(() => chat.IsReady || chat.HasProblem);
+        Assert.True(chat.IsReady, chat.Message);
+
+        chat.SelectedContact = chat.Contacts.Single(c => c.Title == "Eagle Union Group Chat");
+        chat.SelectedTopic = chat.Topics.Single(t => t.Name == "Movie Screening");
+        Assert.Equal(6, chat.Messages.Count);
+        Assert.True(chat.IsWaiting);
+        Assert.Equal("Glad to be here.", Assert.Single(chat.Replies).Text);
+
+        chat.AnswerCommand.Execute(chat.Replies[0]);
+        Assert.True(chat.Messages[6].IsCommander);
+        Assert.Equal(3, chat.Replies.Count);
+        var beforeChoice = chat.Messages.Count;
+
+        // "A romance movie." takes branch 2; branch 3's lines stay hidden.
+        chat.AnswerCommand.Execute(chat.Replies.Single(r => r.Text == "A romance movie."));
+        Assert.True(chat.IsFinished);
+        Assert.Contains(chat.Messages.Skip(beforeChoice), m => m.Text == "Let's watch a romance movie.");
+        Assert.DoesNotContain(chat.Messages, m => m.Text == "A road trip movie sounds good. Let's watch that.");
+        Assert.Contains(chat.Messages, m => m.Kind == ChatLineKind.Sticker);
+
+        chat.RestartCommand.Execute(null);
+        Assert.Equal(6, chat.Messages.Count);
+        chat.AnswerCommand.Execute(chat.Replies[0]);
+        await WaitUntil(() => chat.Messages.Where(m => m.IsThem).All(m => m.Avatar.HasImage && m.Avatar.Image is not null));
+        Assert.All(chat.Messages.Where(m => m.IsThem), m => Assert.True(m.Avatar.HasImage, m.Name));
+        await Task.Delay(300);
+        Dispatcher.UIThread.RunJobs();
+        SaveFrame(window, "fleetchat-RegistryBook-Dark.png");
+        window.Close();
+    }
+
     // With no game data, Ships explains why and its button really opens Sync.
     [AvaloniaFact]
     public async Task Empty_data_folder_points_to_sync()

@@ -1,0 +1,119 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:data="using:AzlDl.Core.Data"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.JuustagramView"
+             x:Name="Root"
+             x:DataType="vm:JuustagramViewModel">
+  <UserControl.Resources>
+    <!-- A comment: avatar, name and text, with its replies indented beneath. -->
+    <DataTemplate x:Key="Comment" x:DataType="vm:CommentItem">
+      <StackPanel Spacing="10">
+        <DockPanel>
+          <ContentControl DockPanel.Dock="Left" Content="{Binding Avatar}" VerticalAlignment="Top" Margin="0,0,12,0" />
+          <StackPanel Spacing="2">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Classes="muted data" FontSize="12" Text="{Binding When}" />
+              <TextBlock Classes="accent" Text="{Binding Name}" />
+            </DockPanel>
+            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
+          </StackPanel>
+        </DockPanel>
+        <ItemsControl ItemsSource="{Binding Replies}" Margin="52,0,0,0" IsVisible="{Binding HasReplies}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:CommentItem">
+              <DockPanel Margin="0,0,0,10">
+                <ContentControl DockPanel.Dock="Left" Content="{Binding Avatar}" VerticalAlignment="Top" Margin="0,0,12,0" />
+                <StackPanel Spacing="2">
+                  <TextBlock Classes="accent" Text="{Binding Name}" />
+                  <TextBlock Text="{Binding Text}" TextWrapping="Wrap" LineHeight="22" />
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="Juustagram isn't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="380,*">
+      <DockPanel Background="{DynamicResource SurfaceBrush}">
+        <TextBox DockPanel.Dock="Top" Margin="16,16,16,8" PlaceholderText="Search posts or accounts" Text="{Binding Filter}"
+                 AutomationProperties.Name="Search posts" />
+        <TextBlock DockPanel.Dock="Bottom" Classes="muted data" Margin="16,8" FontSize="12"
+                   Text="{Binding Posts.Count, StringFormat='{}{0} posts'}" />
+        <ListBox Classes="picker" ItemsSource="{Binding Posts}" SelectedItem="{Binding SelectedPost}" AutomationProperties.Name="Posts">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:PostItem">
+              <StackPanel Spacing="2">
+                <DockPanel>
+                  <TextBlock DockPanel.Dock="Right" Classes="muted data" FontSize="12" Text="{Binding When}" Margin="8,0,0,0" />
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <TextBlock Classes="muted" FontSize="13" Text="{Binding Preview}" TextWrapping="Wrap" MaxLines="2"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+
+      <ScrollViewer Grid.Column="1" Background="{DynamicResource StageBrush}" x:Name="PostScroll">
+        <controls:ChamferBorder Classes="panel" Margin="32,24" Padding="28,24" MaxWidth="680" IsVisible="{Binding HasPost}">
+          <StackPanel Spacing="18">
+            <DockPanel>
+              <ContentControl DockPanel.Dock="Left" Content="{Binding PostAvatar}" Margin="0,0,12,0" />
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding SelectedPost.Title}" FontWeight="SemiBold" />
+                <TextBlock Classes="muted data" FontSize="12" Text="{Binding SelectedPost.When}" />
+              </StackPanel>
+            </DockPanel>
+
+            <Image Source="{Binding Picture}" Stretch="Uniform" MaxHeight="560" HorizontalAlignment="Center" />
+            <StackPanel Spacing="8" IsVisible="{Binding PictureMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <TextBlock Classes="muted" FontSize="13" Text="{Binding PictureMessage}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding SelectedPost.Post.Message}" TextWrapping="Wrap" LineHeight="24" FontSize="16" />
+
+            <StackPanel IsVisible="{Binding CanReply}" Spacing="8">
+              <TextBlock Classes="heading" Text="Reply as the Commander" Margin="0" />
+              <ItemsControl ItemsSource="{Binding Options}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="data:JuustagramOption">
+                    <Button Classes="reply" Content="{Binding Text}" Margin="0,0,0,6"
+                            Command="{Binding #Root.((vm:JuustagramViewModel)DataContext).ChooseCommand}" CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Spacing="16">
+              <TextBlock Classes="heading" Text="Comments" Margin="0" />
+              <ContentControl Content="{Binding Reply}" ContentTemplate="{StaticResource Comment}" />
+              <ItemsControl ItemsSource="{Binding Comments}" ItemTemplate="{StaticResource Comment}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="16" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </controls:ChamferBorder>
+      </ScrollViewer>
+    </Grid>
+  </Panel>
+</UserControl>
