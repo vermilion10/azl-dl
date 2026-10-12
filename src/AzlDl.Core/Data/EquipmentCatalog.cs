@@ -34,6 +34,11 @@ public sealed record EquipmentInfo(
 
     public bool IsEquippable => UsableBy.Count > 0;
 
+    // The game's icon background for this rarity: 1 for Common (one and two stars) up to 5 for Ultra Rare.
+    public int RarityKey => Math.Max(1, Rarity - 1);
+
+    public IReadOnlyList<int> StarSlots => Enumerable.Range(0, Rarity).ToList();
+
     // Rarity as stars, as the game draws them on the icon.
     public string Stars => new('★', Rarity);
 }

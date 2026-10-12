@@ -144,7 +144,8 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     }
 
     // The game's own card art, cut out of its UI bundles into art/ui: card backgrounds and frames per rarity key (1-5,
-    // 4_0 Priority, 5_0 Decisive, 3_1/4_1/5_1 META), hull badges per hull type, faction emblems per nation, and a star.
+    // 4_0 Priority, 5_0 Decisive, 3_1/4_1/5_1 META), hull badges per hull type, faction emblems per nation, a star, and
+    // the equipment icon backgrounds (1-5) and tier badges (T1-T3).
     public string GameArtFolder => Path.Combine(ArtFolder, "ui");
 
     private static readonly string[] RarityKeys = ["1", "2", "3", "4", "5", "4_0", "5_0", "3_1", "4_1", "5_1"];
@@ -162,6 +163,8 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         ("shiptype", "daoqum", "hull_21.png"),
         .. Enumerable.Range(1, 9).Select(n => ("tecnation", $"camptec_logo_{n}", $"nation_{n}.png")),
         ("ui/commonui_atlas", "star", "star.png"),
+        .. Enumerable.Range(1, 5).Select(n => ("weaponframes", $"bg{n}", $"equip_bg_{n}.png")),
+        .. Enumerable.Range(1, 3).Select(n => ("weaponframes", $"t{n}", $"tech_{n}.png")),
     ];
 
     // The size the game draws a dock card frame at.
