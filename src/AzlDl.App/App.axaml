@@ -24,6 +24,20 @@
               <ToggleButton Classes="chip" IsChecked="{Binding IsChecked}"
                             AutomationProperties.Name="{Binding Label}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Image Width="26" Height="16" VerticalAlignment="Center"
+                         Source="{Binding Icon, Converter={x:Static controls:GameArt.Image}}"
+                         IsVisible="{Binding IconIsBadge}" />
+                  <Rectangle Width="18" Height="18" VerticalAlignment="Center" Fill="{Binding $parent[ToggleButton].Foreground}">
+                    <Rectangle.IsVisible>
+                      <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IconIsEmblem" />
+                        <Binding Path="Icon" Converter="{x:Static controls:GameArt.Has}" />
+                      </MultiBinding>
+                    </Rectangle.IsVisible>
+                    <Rectangle.OpacityMask>
+                      <ImageBrush Source="{Binding Icon, Converter={x:Static controls:GameArt.Image}}" Stretch="Uniform" />
+                    </Rectangle.OpacityMask>
+                  </Rectangle>
                   <Border Width="10" Height="14" CornerRadius="2" VerticalAlignment="Center" IsVisible="{Binding HasTier}"
                           Background="{Binding Tier, Converter={x:Static controls:RarityBrushes.Background}}" />
                   <TextBlock Classes="data" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"

@@ -93,28 +93,53 @@
                             <TextBlock Text="{Binding Ship.NationName}" />
                           </StackPanel>
                         </ToolTip.Tip>
-                        <Border Width="{x:Static vm:ShipsViewModel.CardWidth}" Height="188" CornerRadius="4" BorderThickness="2"
-                                ClipToBounds="True"
-                                BorderBrush="{Binding Ship.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
-                                Background="{Binding Ship.Tier, Converter={x:Static controls:RarityBrushes.Background}}">
-                          <Panel>
+                        <!-- The game's card: rarity background, the ship, stars and hull badge, and the rarity frame on top.
+                             Until the game's art is downloaded the frame is drawn in the rarity's colours, with text tags. -->
+                        <Panel Width="{x:Static vm:ShipsViewModel.CardWidth}" Height="{x:Static vm:ShipsViewModel.CardHeight}">
+                          <Border CornerRadius="4" BorderThickness="2"
+                                  BorderBrush="{Binding Ship.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
+                                  Background="{Binding Ship.Tier, Converter={x:Static controls:RarityBrushes.Background}}" />
+                          <!-- The frame's bottom bar is thicker than its sides. -->
+                          <Panel Margin="5,5,5,8" ClipToBounds="True">
+                            <Image Source="{Binding Ship.RarityKey, Converter={x:Static controls:GameArt.Image}, ConverterParameter=card_}"
+                                   Stretch="Fill" />
                             <Image Source="{Binding Image}" Stretch="UniformToFill" VerticalAlignment="Top" />
                             <!-- Not downloaded yet: a question mark keeps the card's place and frame. -->
                             <TextBlock Text="?" IsVisible="{Binding !HasImage}" FontSize="56" FontWeight="Bold" Foreground="#B3FFFFFF"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,24" />
-                            <Border Classes="cardTag" HorizontalAlignment="Left" CornerRadius="0,0,4,0">
+                            <Image Width="36" Height="22" Margin="4,4,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                   Source="{Binding Ship.TypeId, Converter={x:Static controls:GameArt.Image}, ConverterParameter=hull_}" />
+                            <Border Classes="cardTag" HorizontalAlignment="Left" CornerRadius="0,0,4,0"
+                                    IsVisible="{Binding !#Root.((vm:ShipsViewModel)DataContext).HasGameArt}">
                               <TextBlock Text="{Binding Ship.TierCode}" />
                             </Border>
                             <Border Classes="cardTag" HorizontalAlignment="Right" CornerRadius="0,0,0,4"
-                                    IsVisible="{Binding Ship.HullCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    IsVisible="{Binding !#Root.((vm:ShipsViewModel)DataContext).HasGameArt}">
                               <TextBlock Text="{Binding Ship.HullCode}" />
                             </Border>
-                            <Border VerticalAlignment="Bottom" Background="#D9101318" Padding="6,5">
-                              <TextBlock Text="{Binding Ship.Name}" Foreground="White" FontSize="13" FontWeight="SemiBold"
-                                         TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
-                            </Border>
+                            <StackPanel VerticalAlignment="Bottom">
+                              <ItemsControl ItemsSource="{Binding Ship.StarSlots}" HorizontalAlignment="Center" Margin="0,0,0,2"
+                                            IsVisible="{Binding #Root.((vm:ShipsViewModel)DataContext).HasGameArt}">
+                                <ItemsControl.ItemsPanel>
+                                  <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                  </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate>
+                                    <Image Width="14" Height="13" Source="{Binding Source={x:Static controls:GameArt.Star}}" />
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                              <Border Background="#D9101318" Padding="6,4">
+                                <TextBlock Text="{Binding Ship.Name}" Foreground="White" FontSize="13" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" HorizontalAlignment="Center" />
+                              </Border>
+                            </StackPanel>
                           </Panel>
-                        </Border>
+                          <Image Stretch="Fill"
+                                 Source="{Binding Ship.RarityKey, Converter={x:Static controls:GameArt.Image}, ConverterParameter=frame_}" />
+                        </Panel>
                       </Button>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>

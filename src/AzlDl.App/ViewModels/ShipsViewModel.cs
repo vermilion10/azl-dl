@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using AzlDl.App.Audio;
+using AzlDl.App.Controls;
 using AzlDl.App.Settings;
 using AzlDl.Core.Audio;
 using AzlDl.Core;
@@ -155,15 +156,25 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     [ObservableProperty]
     private string imageMessage = "";
 
-    public bool CanDownloadImages => ImagesMissing > 0 && !ImagesBusy;
+    // Whether the game's card frames, backgrounds and badges (art/ui) are downloaded; without them cards are drawn.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadImages), nameof(ImageDownloadTitle))]
+    private bool hasGameArt;
+
+    public bool CanDownloadImages => (ImagesMissing > 0 || !HasGameArt) && !ImagesBusy;
 
     // Card images are about 30 KB each.
-    public string ImageDownloadTitle =>
-        $"Download {Count(ImagesMissing)} card images (about {Math.Max(1, ImagesMissing * 30 / 1024)} MB)";
+    // Card images are about 30 KB each; the frames and badges about 1.4 MB together.
+    public string ImageDownloadTitle => ImagesMissing > 0
+        ? $"Download {Count(ImagesMissing)} card images (about {Math.Max(1, ImagesMissing * 30 / 1024) + (HasGameArt ? 0 : 1)} MB)"
+        : "Download the game's card frames (about 1 MB)";
 
     private static string Count(int value) => value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
+    // Cards keep the game's 232 x 324 proportions.
     public const double CardWidth = 132;
+
+    public const double CardHeight = 184;
 
     public const double CardSpacing = 12;
 
@@ -380,8 +391,16 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         }
 
         ImagesMissing = cards.Values.Count(c => !c.HasImage && c.Ship.Painting.Length > 0);
+        GameArt.Use(fetcher.GameArtFolder);
+        HasGameArt = fetcher.HasGameArt;
         SelectedSort ??= SortOptions[0];
+        BuildFilters();
+    }
 
+    // Rebuilt after the game's art is downloaded so chips pick up their badges; picked chips stay picked.
+    private void BuildFilters()
+    {
+        var picked = FilterGroups.SelectMany(g => g.Chips.Where(c => c.IsChecked).Select(c => (g.Title, c.Label))).ToHashSet();
         string[] tierCodes = ["N", "R", "SR", "SSR", "UR"];
         var rarities = all.GroupBy(s => s.Rarity).OrderBy(g => g.Key)
             .Select(g => FilterChip.For<ShipInfo>(g.First().RarityName, tierCodes[g.Key - 2], s => s.Rarity == g.Key, (RarityTier)(g.Key - 2)));
@@ -405,16 +424,22 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         {
             var name = g.First().TypeName.Trim();
             var team = g.First().TeamType switch { "vanguard" => "Vanguard", "main" => "Main fleet", "submarine" => "Submarine", var t => t };
-            return FilterChip.For<ShipInfo>(typeNames.Contains(name) ? $"{name} ({team})" : name, g.First().HullCode, s => s.TypeId == g.Key);
+            return FilterChip.For<ShipInfo>(typeNames.Contains(name) ? $"{name} ({team})" : name, g.First().HullCode, s => s.TypeId == g.Key,
+                icon: $"hull_{g.Key}");
         });
 
         var factions = all.GroupBy(s => s.NationName).OrderBy(g => g.Min(s => s.NationId))
-            .Select(g => FilterChip.For<ShipInfo>(g.Key, "", s => s.NationName == g.Key));
+            .Select(g => FilterChip.For<ShipInfo>(g.Key, "", s => s.NationName == g.Key, icon: $"nation_{g.Min(s => s.NationId)}"));
 
         FilterGroups.Clear();
         foreach (var (title, chips) in new[] { ("Rarity", rarities), ("Collection", collections), ("Fleet", roles), ("Hull type", hulls), ("Faction", factions) })
         {
-            FilterGroups.Add(new FilterGroup(title, chips, ApplyFilter));
+            var group = new FilterGroup(title, chips, ApplyFilter);
+            FilterGroups.Add(group);
+            foreach (var chip in group.Chips.Where(c => picked.Contains((title, c.Label))))
+            {
+                chip.IsChecked = true;
+            }
         }
     }
 
@@ -435,7 +460,7 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     private async Task DownloadShipImagesAsync()
     {
         var missing = cards.Values.Where(c => !c.HasImage && c.Ship.Painting.Length > 0).ToList();
-        if (missing.Count == 0)
+        if (missing.Count == 0 && HasGameArt)
         {
             return;
         }
@@ -445,6 +470,13 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         try
         {
             var fetcher = Fetcher();
+            if (!HasGameArt)
+            {
+                await Task.Run(() => fetcher.FetchGameArtAsync());
+                GameArt.Refresh();
+                HasGameArt = fetcher.HasGameArt;
+            }
+
             await Task.Run(() => fetcher.FetchImagesAsync(
                 missing.Select(c => AssetFetcher.ShipImageFolder + c.Ship.Painting).Distinct().ToList()));
             foreach (var card in missing)
@@ -459,6 +491,10 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
             ImagesMissing = cards.Values.Count(c => !c.HasImage && c.Ship.Painting.Length > 0);
             ImageMessage = ImagesMissing == 0 ? "" : $"The game has no card image for {Count(ImagesMissing)} ships.";
+
+            // New row and chip objects bind again, now with the game's frames and badges.
+            BuildFilters();
+            BuildRows();
         }
         catch (Exception e) when (e is IOException or HttpRequestException or InvalidDataException
                                       or System.Net.Sockets.SocketException or OperationCanceledException)

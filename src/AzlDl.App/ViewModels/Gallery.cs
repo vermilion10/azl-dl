@@ -47,10 +47,19 @@ public sealed record ShipCardRow(IReadOnlyList<ShipCard> Cards);
 public sealed record EquipmentCardRow(IReadOnlyList<EquipmentCard> Cards);
 
 // A filter value. Chips in one group combine with OR, groups with AND.
-public sealed partial class FilterChip(string label, string code, Func<object, bool> matches, RarityTier? tier = null) : ObservableObject
+public sealed partial class FilterChip(string label, string code, Func<object, bool> matches, RarityTier? tier = null, string icon = "")
+    : ObservableObject
 {
-    public static FilterChip For<T>(string label, string code, Func<T, bool> matches, RarityTier? tier = null) =>
-        new(label, code, item => item is T value && matches(value), tier);
+    public static FilterChip For<T>(string label, string code, Func<T, bool> matches, RarityTier? tier = null, string icon = "") =>
+        new(label, code, item => item is T value && matches(value), tier, icon);
+
+    // The game's badge or emblem for this value (hull_3, nation_1) when its art is downloaded.
+    public string Icon { get; } = icon;
+
+    // Faction emblems are white artwork, drawn in the text colour so they show on light and dark chips alike.
+    public bool IconIsEmblem => Icon.StartsWith("nation_", StringComparison.Ordinal);
+
+    public bool IconIsBadge => Icon.Length > 0 && !IconIsEmblem;
 
     public string Label { get; } = label;
 

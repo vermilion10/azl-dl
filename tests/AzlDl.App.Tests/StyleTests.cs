@@ -84,6 +84,11 @@ public class StyleTests
                 .ForEach(c => c.IsChecked = true);
             await WaitUntil(() => main.Ships.CardRows.Take(4).SelectMany(r => r.Cards).Where(c => c.HasImage).All(c => c.Image is not null));
             SaveFrame(window, "gallery-research-meta.png");
+            window.Height = 2400;
+            Dispatcher.UIThread.RunJobs();
+            SaveFrame(window, "gallery-tall.png");
+            window.Height = 880;
+            Dispatcher.UIThread.RunJobs();
             main.Ships.ClearFiltersCommand.Execute(null);
             main.Ships.SelectedSort = main.Ships.SortOptions[0];
         }
@@ -202,6 +207,13 @@ public class StyleTests
         ships.Columns = 7;
         Assert.All(ships.CardRows.SkipLast(1), r => Assert.Equal(7, r.Cards.Count));
         Assert.Equal(total, ships.CardRows.Sum(r => r.Cards.Count));
+
+        // Event rows filed under a ship's group (Compiler under Universal Bulin) don't replace the ship.
+        var bulin = ships.Ships.Single(s => s.GroupId == 10000);
+        Assert.Equal("Universal Bulin", bulin.Name);
+        Assert.Equal((RarityTier.Elite, "DD", "3"), (bulin.Tier, bulin.HullCode, bulin.RarityKey));
+        Assert.DoesNotContain(ships.Ships, s => s.Name == "Compiler");
+        Assert.Equal("4_1", ships.Ships.First(s => s.Tier == RarityTier.Meta && s.Rarity == 5).RarityKey);
 
         var enterprise = ships.Ships.Single(s => s.GroupId == 10706);
         Assert.Equal(RarityTier.SuperRare, enterprise.Tier);
