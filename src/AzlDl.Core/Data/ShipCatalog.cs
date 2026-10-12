@@ -66,8 +66,21 @@ public sealed record ShipInfo(
     long NationId,
     string TeamType,
     ShipCollection Collection,
-    RarityTier Tier)
+    RarityTier Tier,
+    int Stars)
 {
+    // The game's name for the card art of this rarity: 1-5 by rarity, 4_0 Priority, 5_0 Decisive, and META cards one
+    // below their rarity with _1 (an Ultra Rare META ship uses 5_1).
+    public string RarityKey => Tier switch
+    {
+        RarityTier.Priority => "4_0",
+        RarityTier.Decisive => "5_0",
+        RarityTier.Meta => $"{Math.Clamp(Rarity - 1, 3, 5)}_1",
+        _ => (Rarity - 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    public IReadOnlyList<int> StarSlots => Enumerable.Range(0, Stars).ToList();
+
     // The hull type's usual abbreviation (DD, CL, BB, ...); the game shows an icon instead.
     public string HullCode => ShipCatalog.HullCode(TypeId);
 
@@ -251,7 +264,14 @@ public sealed class ShipCatalog
             var id = Long(row["id"]);
             var group = Long(row["group_type"]);
             var star = row["star"] is null ? 0 : Long(row["star"]);
-            if (statistics[id.ToString()] is null)
+            if (statistics[id.ToString()] is not JsonObject row2)
+            {
+                continue;
+            }
+
+            // Event and boss rows reuse a ship's group (Compiler is filed under Universal Bulin's); a row belongs to the
+            // group only when its own skin does.
+            if (row2["skin_id"] is { } skinId && skins[Long(skinId).ToString()]?["ship_group"] is { } skinGroup && Long(skinGroup) != group)
             {
                 continue;
             }
@@ -263,7 +283,7 @@ public sealed class ShipCatalog
         }
 
         var ships = new List<ShipInfo>();
-        foreach (var (group, (id, _)) in best)
+        foreach (var (group, (id, starCount)) in best)
         {
             var stats = (JsonObject)statistics[id.ToString()]!;
             var type = Long(stats["type"]);
@@ -323,7 +343,8 @@ public sealed class ShipCatalog
                 nation,
                 types[type.ToString()]?["team_type"]?.GetValue<string>() ?? "",
                 collection,
-                tier));
+                tier,
+                (int)starCount));
         }
 
         return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, live2DActions, expressions, live2DIdles);

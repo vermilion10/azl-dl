@@ -143,6 +143,70 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         return path;
     }
 
+    // The game's own card art, cut out of its UI bundles into art/ui: card backgrounds and frames per rarity key (1-5,
+    // 4_0 Priority, 5_0 Decisive, 3_1/4_1/5_1 META), hull badges per hull type, faction emblems per nation, and a star.
+    public string GameArtFolder => Path.Combine(ArtFolder, "ui");
+
+    private static readonly string[] RarityKeys = ["1", "2", "3", "4", "5", "4_0", "5_0", "3_1", "4_1", "5_1"];
+
+    private static readonly int[] HullTypes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 22, 23, 24];
+
+    // (bundle, sprite, file written under art/ui)
+    public static IReadOnlyList<(string Bundle, string Sprite, string File)> GameArt { get; } =
+    [
+        .. RarityKeys.Select(k => ("shipframe", k, $"frame_{k}.png")),
+        .. RarityKeys.Select(k => ($"bg/star_level_card_{k}", $"star_level_card_{k}", $"card_{k}.png")),
+        .. HullTypes.Select(t => ("shiptype", $"buffitem_tec_{t}", $"hull_{t}.png")),
+        // Guided-missile destroyers have no numbered badge; the vanguard and main fleet ones are named instead.
+        ("shiptype", "daoquv", "hull_20.png"),
+        ("shiptype", "daoqum", "hull_21.png"),
+        .. Enumerable.Range(1, 9).Select(n => ("tecnation", $"camptec_logo_{n}", $"nation_{n}.png")),
+        ("ui/commonui_atlas", "star", "star.png"),
+    ];
+
+    // The size the game draws a dock card frame at.
+    public const int CardFrameWidth = 232;
+    public const int CardFrameHeight = 324;
+
+    public bool HasGameArt => GameArt.All(a => File.Exists(Path.Combine(GameArtFolder, a.File)));
+
+    // Downloads the UI bundles the card art comes from (about 1.4 MB) and writes each sprite out as a PNG.
+    public async Task FetchGameArtAsync(CancellationToken cancellationToken = default)
+    {
+        var bundles = GameArt.Select(a => a.Bundle).Distinct().ToList();
+        await FetchAsync(AssetCategory.Azl, bundles, cancellationToken, extract: false);
+        Directory.CreateDirectory(GameArtFolder);
+        foreach (var group in GameArt.GroupBy(a => a.Bundle))
+        {
+            var path = Path.Combine(AssetFolder, group.Key.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            var assets = Unity.BundleInspector.Inspect(path).Assets;
+            foreach (var (_, sprite, file) in group)
+            {
+                // Prefer the sprite (an atlas region); a single-texture bundle names its texture the same way.
+                var asset = assets.FirstOrDefault(a => a.Type == "Sprite" && a.Name == sprite)
+                            ?? assets.FirstOrDefault(a => a.Type == "Texture2D" && a.Name == sprite);
+                if (asset is null || Unity.AssetPreviewer.Read(path, asset).Image is not { } image)
+                {
+                    continue;
+                }
+
+                // Frames are 9-slice sprites the game stretches to the card; they are saved at the card's size.
+                if (file.StartsWith("frame_", StringComparison.Ordinal) && Unity.AssetPreviewer.SpriteBorder(path, asset) is var (l, b, r, t)
+                    && l + b + r + t > 0)
+                {
+                    image = image.NineSlice(l, b, r, t, CardFrameWidth, CardFrameHeight);
+                }
+
+                image.WritePng(Path.Combine(GameArtFolder, file));
+            }
+        }
+    }
+
     public const string ShipImageFolder = "shipyardicon/";
 
     public const string EquipmentImageFolder = "equips/";

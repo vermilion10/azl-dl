@@ -50,6 +50,31 @@ public sealed class RgbaImage(int width, int height, byte[] pixels)
         return cropped;
     }
 
+    // Stretches a 9-slice image (Unity sprite borders: left, bottom, right, top) to a new size: corners stay as they are,
+    // edges stretch along their length and the centre in both directions.
+    public RgbaImage NineSlice(int left, int bottom, int right, int top, int width, int height)
+    {
+        var result = new RgbaImage(width, height);
+        int[] sourceX = [0, left, Width - right, Width], targetX = [0, left, width - right, width];
+        int[] sourceY = [0, bottom, Height - top, Height], targetY = [0, bottom, height - top, height];
+        for (var ty = 0; ty < height; ty++)
+        {
+            var row = ty < targetY[1] ? 0 : ty < targetY[2] ? 1 : 2;
+            var sy = Map(ty, targetY[row], targetY[row + 1], sourceY[row], sourceY[row + 1]);
+            for (var tx = 0; tx < width; tx++)
+            {
+                var column = tx < targetX[1] ? 0 : tx < targetX[2] ? 1 : 2;
+                var sx = Map(tx, targetX[column], targetX[column + 1], sourceX[column], sourceX[column + 1]);
+                Buffer.BlockCopy(Pixels, ((sy * Width) + sx) * 4, result.Pixels, ((ty * width) + tx) * 4, 4);
+            }
+        }
+
+        return result;
+
+        static int Map(int value, int from0, int from1, int to0, int to1) =>
+            from1 <= from0 ? to0 : Math.Clamp(to0 + (int)((long)(value - from0) * (to1 - to0) / (from1 - from0)), to0, Math.Max(to0, to1 - 1));
+    }
+
     // Draws source stretched over the rectangle (x, y, width, height) with bilinear sampling, blended over what is
     // already here. Sampling and blending happen on premultiplied colour so transparent edges don't darken.
     public void DrawScaled(RgbaImage source, double x, double y, double width, double height)
