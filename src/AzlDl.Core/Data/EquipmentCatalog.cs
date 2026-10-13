@@ -5,8 +5,16 @@ using System.Text.RegularExpressions;
 
 namespace AzlDl.Core.Data;
 
-// One stat at +0 and at the highest enhancement level ("12" and "18", or "48 x 2" and "67 x 2" for damage).
-public sealed record EquipmentStat(string Label, string Base, string Max);
+// One stat at every enhancement level, +0 first ("12" ... "18", or "48 x 2" ... "67 x 2" for damage). Icon names the
+// stat's game icon: an attricon sprite (cannon, antiaircraft, ...) or "damage" from equipmentattr.
+public sealed record EquipmentStat(string Label, string Icon, IReadOnlyList<string> Values)
+{
+    public string Base => Values[0];
+
+    public string Max => Values[^1];
+
+    public string At(int level) => Values[Math.Clamp(level, 0, Values.Count - 1)];
+}
 
 // A piece of equipment as the game's codex lists it: each tier of a gun (T1, T2, T3) is its own entry.
 public sealed record EquipmentInfo(
@@ -104,19 +112,19 @@ public sealed partial class EquipmentCatalog
 
             JsonNode? Field(JsonObject level, string name) => level[name] ?? baseRow[name];
 
-            var top = levels[^1];
             var stats = new List<EquipmentStat>();
-            if (Text(baseRow["damage"]) is { Length: > 0 } damage)
+            if (Text(baseRow["damage"]) is { Length: > 0 })
             {
-                stats.Add(new EquipmentStat("Damage", damage, Text(Field(top, "damage"))));
+                stats.Add(new EquipmentStat("Damage", "damage", levels.Select(l => Text(Field(l, "damage"))).ToList()));
             }
 
             for (var i = 1; i <= 3; i++)
             {
                 if (Text(baseRow[$"attribute_{i}"]) is { Length: > 0 } attribute)
                 {
-                    stats.Add(new EquipmentStat(attributeLabels.GetValueOrDefault(attribute, attribute),
-                        Value(baseRow[$"value_{i}"]), Value(Field(top, $"value_{i}"))));
+                    var field = $"value_{i}";
+                    stats.Add(new EquipmentStat(attributeLabels.GetValueOrDefault(attribute, attribute), attribute,
+                        levels.Select(l => Value(Field(l, field))).ToList()));
                 }
             }
 

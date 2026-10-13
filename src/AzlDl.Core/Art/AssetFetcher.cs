@@ -144,13 +144,31 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     }
 
     // The game's own card art, cut out of its UI bundles into art/ui: card backgrounds and frames per rarity key (1-5,
-    // 4_0 Priority, 5_0 Decisive, 3_1/4_1/5_1 META), hull badges per hull type, faction emblems per nation, a star, and
-    // the equipment icon backgrounds (1-5) and tier badges (T1-T3).
+    // 4_0 Priority, 5_0 Decisive, 3_1/4_1/5_1 META), hull badges per hull type, faction emblems per nation, rarity
+    // letters, stat icons, a star, and the equipment icon backgrounds (1-5) and tier badges (T1-T3).
     public string GameArtFolder => Path.Combine(ArtFolder, "ui");
 
     private static readonly string[] RarityKeys = ["1", "2", "3", "4", "5", "4_0", "5_0", "3_1", "4_1", "5_1"];
 
     private static readonly int[] HullTypes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19, 22, 23, 24];
+
+    // Each nation's emblem print, from the game's Nation.Nation2Print (model/const/nation.lua). Collaborations without
+    // their own print share the generic one (um_0).
+    private static readonly Dictionary<long, string> NationPrints = new()
+    {
+        [0] = "cm", [1] = "us", [2] = "en", [3] = "jp", [4] = "de", [5] = "cn", [6] = "ita", [7] = "sn", [8] = "ff",
+        [9] = "mnf", [10] = "ff", [11] = "nl", [12] = "ldp", [96] = "mot", [97] = "meta", [98] = "cm", [101] = "np",
+        [102] = "bili", [103] = "um", [104] = "um", [105] = "um", [106] = "um", [107] = "um", [108] = "um", [109] = "um",
+        [110] = "um", [111] = "um", [112] = "um", [113] = "um", [114] = "um", [115] = "um", [116] = "um", [117] = "um",
+    };
+
+    // Stat icons in the attricon atlas, named after the stats.
+    private static readonly string[] StatIcons =
+        ["durability", "cannon", "torpedo", "antiaircraft", "air", "reload", "armor", "hit", "dodge", "speed", "luck", "antisub", "expend", "oxy_max"];
+
+    // Rarity letters (N, R, E, SR, UR, then PRY and DR) by rarity key.
+    private static readonly (string Bundle, string Key)[] RarityLetters =
+        [("2s", "1"), ("3s", "2"), ("4s", "3"), ("5s", "4"), ("6s", "5"), ("05s", "4_0"), ("06s", "5_0")];
 
     // (bundle, sprite, file written under art/ui)
     public static IReadOnlyList<(string Bundle, string Sprite, string File)> GameArt { get; } =
@@ -161,7 +179,10 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
         // Guided-missile destroyers have no numbered badge; the vanguard and main fleet ones are named instead.
         ("shiptype", "daoquv", "hull_20.png"),
         ("shiptype", "daoqum", "hull_21.png"),
-        .. Enumerable.Range(1, 9).Select(n => ("tecnation", $"camptec_logo_{n}", $"nation_{n}.png")),
+        .. NationPrints.Select(p => ($"prints/{p.Value}_0", $"{p.Value}_0", $"nation_{p.Key}.png")),
+        .. RarityLetters.Select(r => ($"shiprarity/{r.Bundle}", r.Bundle, $"rarity_{r.Key}.png")),
+        .. StatIcons.Select(n => ("attricon", n, $"attr_{n}.png")),
+        ("equipmentattr", "damage", "attr_damage.png"),
         ("ui/commonui_atlas", "star", "star.png"),
         .. Enumerable.Range(1, 5).Select(n => ("weaponframes", $"bg{n}", $"equip_bg_{n}.png")),
         .. Enumerable.Range(1, 3).Select(n => ("weaponframes", $"t{n}", $"tech_{n}.png")),
@@ -173,7 +194,7 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
 
     public bool HasGameArt => GameArt.All(a => File.Exists(Path.Combine(GameArtFolder, a.File)));
 
-    // Downloads the UI bundles the card art comes from (about 1.4 MB) and writes each sprite out as a PNG.
+    // Downloads the UI bundles the card art comes from (about 2.5 MB) and writes each sprite out as a PNG.
     public async Task FetchGameArtAsync(CancellationToken cancellationToken = default)
     {
         var bundles = GameArt.Select(a => a.Bundle).Distinct().ToList();

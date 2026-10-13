@@ -3,7 +3,11 @@ using System.Text.Json.Nodes;
 
 namespace AzlDl.Core.Data;
 
-public sealed record StatValue(string Label, string Value);
+// Icon names the stat's sprite in the game's attricon atlas (durability, cannon, ...), when it has one.
+public sealed record StatValue(string Label, string Value, string Icon = "");
+
+// A ship's stats as one list, for the views' stat templates.
+public sealed record StatSheet(IReadOnlyList<StatValue> Stats);
 
 // Description has its $n placeholders filled with the level 1 and max level values ("40.0% → 70.0%").
 public sealed record SkillInfo(string Name, string Description, int MaxLevel);
@@ -99,6 +103,10 @@ public sealed record ShipInfo(
 
     // The default skin's painting, which names the ship's card image.
     public string Painting => Skins.Count > 0 ? Skins[0].Painting : "";
+
+    // What the ship's stats at any level are worked out from; null for ships read from a data folder without the
+    // growth tables.
+    public ShipGrowth? Growth { get; init; }
 }
 
 // Reads the JSON tables written by the config and sharecfg commands and joins them into ships.
@@ -144,14 +152,23 @@ public sealed class ShipCatalog
     private readonly IReadOnlyDictionary<string, string> live2DActions;
     private readonly JsonObject expressions;
     private readonly IReadOnlyDictionary<long, IReadOnlyDictionary<string, string>> live2DIdles;
+    private readonly StatText statText;
 
     public IReadOnlyList<ShipInfo> Ships { get; }
 
+    // The affinity stages that change stats, lowest first (Stranger, Friendly, Crush, Love, Promised, Promised at 200).
+    public IReadOnlyList<AffinityLevel> AffinityLevels { get; }
+
+    // Labels for the stat sheet, and the oil ratio per level.
+    private sealed record StatText(string[] Labels, string[] ArmorNames, string Cost, IReadOnlyDictionary<int, double> OilRatios);
+
     private ShipCatalog(IReadOnlyList<ShipInfo> ships, JsonObject words, IReadOnlyList<(string Key, string Label, string Resource)> voiceKeys,
         IReadOnlyDictionary<string, string> chibiActions, IReadOnlyDictionary<string, string> live2DActions, JsonObject expressions,
-        IReadOnlyDictionary<long, IReadOnlyDictionary<string, string>> live2DIdles)
+        IReadOnlyDictionary<long, IReadOnlyDictionary<string, string>> live2DIdles, StatText statText, IReadOnlyList<AffinityLevel> affinityLevels)
     {
         Ships = ships;
+        this.statText = statText;
+        AffinityLevels = affinityLevels;
         this.words = words;
         this.voiceKeys = voiceKeys;
         this.chibiActions = chibiActions;
@@ -176,6 +193,9 @@ public sealed class ShipCatalog
         JsonObject Read(string file) =>
             JsonNode.Parse(File.ReadAllBytes(Path.Combine(dataFolder, file)))?.AsObject()
             ?? throw new InvalidDataException($"{file} is empty.");
+
+        // Tables older data folders may lack; without them the matching part of the stats is left out.
+        JsonObject Optional(string file) => File.Exists(Path.Combine(dataFolder, file)) ? Read(file) : [];
 
         var statistics = Read("config/ship_data_statistics.json");
         var templates = Read("config/ship_data_template.json");
@@ -282,6 +302,21 @@ public sealed class ShipCatalog
             }
         }
 
+        var growthTables = new GrowthTables(
+            statistics,
+            Optional("sharecfg/ship_data_strengthen.json"),
+            research.Count > 0 ? Read("sharecfg/ship_data_blueprint.json") : [],
+            Optional("sharecfg/ship_strengthen_blueprint.json"),
+            Optional("sharecfg/ship_strengthen_meta.json"),
+            Optional("sharecfg/ship_meta_repair.json"),
+            Optional("sharecfg/ship_meta_repair_effect.json"),
+            Optional("sharecfg/ship_data_trans.json"),
+            Optional("sharecfg/transform_data_template.json"),
+            Enumerable.Range(1, ShipGrowth.Count)
+                .Select(i => attributes[i.ToString()]?["name"]?.GetValue<string>() ?? "")
+                .Select((name, i) => (name, i)).Where(p => p.name.Length > 0)
+                .ToDictionary(p => p.name, p => p.i, StringComparer.Ordinal));
+
         var ships = new List<ShipInfo>();
         foreach (var (group, (id, starCount)) in best)
         {
@@ -344,10 +379,273 @@ public sealed class ShipCatalog
                 types[type.ToString()]?["team_type"]?.GetValue<string>() ?? "",
                 collection,
                 tier,
-                (int)starCount));
+                (int)starCount)
+            {
+                Growth = growthTables.For(group, id, stats, templates[id.ToString()] as JsonObject, collection),
+            });
         }
 
-        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions, live2DActions, expressions, live2DIdles);
+        // Armor types 1-3, labelled as the ship screen labels them.
+        var armorNames = new[] { "", Tip("word_lightArmor"), Tip("word_mediumArmor"), Tip("word_heavyarmor") };
+        var oilRatios = Optional("sharecfg/ship_level.json").Select(p => p.Value).OfType<JsonObject>()
+            .Where(l => l["level"] is not null && l["fight_oil_ratio"] is not null)
+            .ToDictionary(l => (int)Long(l["level"]), l => l["fight_oil_ratio"]!.GetValue<double>());
+        var statText = new StatText(statLabels, armorNames, Tip("attr_consume"), oilRatios);
+
+        return new ShipCatalog(ships.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList(), words, voiceKeys, chibiActions,
+            live2DActions, expressions, live2DIdles, statText, ReadAffinityLevels(Optional("sharecfg/intimacy_template.json")));
+    }
+
+    // The ship's stat sheet in the order the game's ship screen lists it: HP, armor, reload, firepower, torpedo,
+    // evasion, anti-air, aviation, oil cost, anti-submarine, accuracy, luck and speed.
+    public IReadOnlyList<StatValue> StatsAt(ShipInfo ship, int level, AffinityLevel affinity, bool developed, bool retrofit)
+    {
+        if (ship.Growth is not { } growth)
+        {
+            return ship.Stats;
+        }
+
+        var values = growth.At(level, affinity.Bonus, developed, retrofit);
+        StatValue Stat(int i) => new(statText.Labels[i], FormatNumber(values[i]), StatIcons[i]);
+
+        return
+        [
+            Stat(ShipGrowth.Durability),
+            new StatValue(statText.Labels[ShipGrowth.Armor], statText.ArmorNames.ElementAtOrDefault(growth.ArmorType) ?? "", StatIcons[ShipGrowth.Armor]),
+            Stat(ShipGrowth.Reload),
+            Stat(ShipGrowth.Cannon),
+            Stat(ShipGrowth.Torpedo),
+            Stat(ShipGrowth.Dodge),
+            Stat(ShipGrowth.AntiAircraft),
+            Stat(ShipGrowth.Air),
+            new StatValue(statText.Cost, growth.OilCost(level, statText.OilRatios).ToString(System.Globalization.CultureInfo.InvariantCulture), "expend"),
+            Stat(ShipGrowth.AntiSub),
+            Stat(ShipGrowth.Hit),
+            Stat(ShipGrowth.Luck),
+            Stat(ShipGrowth.Speed),
+        ];
+    }
+
+    // The attricon sprite for each attrs index.
+    private static readonly string[] StatIcons =
+        ["durability", "cannon", "torpedo", "antiaircraft", "air", "reload", "armor", "hit", "dodge", "speed", "luck", "antisub"];
+
+    // intimacy_template rows that change stats. A stage with the same bonus as the next one (Upset, before Stranger) is
+    // left out; a repeated name (Promised, then Promised at 200) gets its affinity added.
+    private static IReadOnlyList<AffinityLevel> ReadAffinityLevels(JsonObject template)
+    {
+        var rows = template.Select(p => p.Value).OfType<JsonObject>()
+            .Where(r => r["id"] is not null && r["attr_bonus"] is not null)
+            .OrderBy(r => Long(r["id"]))
+            .ToList();
+        var levels = new List<AffinityLevel>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var bonus = Long(rows[i]["attr_bonus"]) / 10000.0;
+            if (i + 1 < rows.Count && Long(rows[i + 1]["attr_bonus"]) / 10000.0 == bonus)
+            {
+                continue;
+            }
+
+            var name = Text(rows[i]["name"]);
+            if (levels.Any(l => l.Name == name) && rows[i]["lower_bound"] is { } lower)
+            {
+                name = $"{name} ({Long(lower) / 100})";
+            }
+
+            levels.Add(new AffinityLevel(name, bonus));
+        }
+
+        return levels.Count > 0 ? levels : [new AffinityLevel("", 0)];
+    }
+
+    // Reads what each ship's stats grow from. Field names follow the game's tables; ShipGrowth combines them.
+    private sealed class GrowthTables(
+        JsonObject statistics,
+        JsonObject strengthen,
+        JsonObject blueprints,
+        JsonObject blueprintLevels,
+        JsonObject metaStrengthen,
+        JsonObject metaRepairs,
+        JsonObject metaRepairEffects,
+        JsonObject retrofits,
+        JsonObject retrofitNodes,
+        IReadOnlyDictionary<string, int> attributeIndex)
+    {
+        // The five stats feeding and development levels raise, in the order their arrays list them
+        // (ShipModAttr.ID_TO_ATTR and BLUEPRINT_ATTRS).
+        private static readonly int[] RaisedStats = [ShipGrowth.Cannon, ShipGrowth.Torpedo, ShipGrowth.AntiAircraft, ShipGrowth.Air, ShipGrowth.Reload];
+
+        public ShipGrowth For(long group, long id, JsonObject stats, JsonObject? template, ShipCollection collection)
+        {
+            var key = group.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var (kind, development) = collection switch
+            {
+                ShipCollection.Research when blueprints[key] is JsonObject blueprint => (DevelopmentKind.Research, Research(blueprint)),
+                ShipCollection.Meta when metaStrengthen[key] is JsonObject meta => (DevelopmentKind.Meta, Meta(meta)),
+                _ => (DevelopmentKind.Enhancement, Enhancement(template)),
+            };
+            var (retrofit, retrofitted) = Retrofit(key, id);
+            return new ShipGrowth
+            {
+                Base = Row(stats),
+                Kind = kind,
+                Development = development,
+                Retrofit = retrofit,
+                Retrofitted = retrofitted,
+                ArmorType = stats["armor_type"] is { } armor ? (int)Long(armor) : 0,
+                OilStart = template?["oil_at_start"] is { } start ? (int)Long(start) : 0,
+                OilEnd = template?["oil_at_end"] is { } end ? (int)Long(end) : 0,
+            };
+        }
+
+        private static GrowthRow Row(JsonObject stats) =>
+            new(Values(stats["attrs"]), Values(stats["attrs_growth"]), Values(stats["attrs_growth_extra"]));
+
+        private static double[] Values(JsonNode? node)
+        {
+            var values = new double[ShipGrowth.Count];
+            if (node is JsonArray array)
+            {
+                for (var i = 0; i < values.Length && i < array.Count; i++)
+                {
+                    values[i] = array[i]?.GetValueKind() == JsonValueKind.Number ? array[i]!.GetValue<double>() : 0;
+                }
+            }
+
+            return values;
+        }
+
+        private double[] Enhancement(JsonObject? template)
+        {
+            var development = new double[ShipGrowth.Count];
+            if (template?["strengthen_id"] is { } strengthenId && strengthen[Long(strengthenId).ToString()]?["durability"] is JsonArray caps)
+            {
+                for (var i = 0; i < RaisedStats.Length && i < caps.Count; i++)
+                {
+                    development[RaisedStats[i]] = caps[i]!.GetValue<double>();
+                }
+            }
+
+            return development;
+        }
+
+        // ShipBluePrint:getTotalAdditions with every development level done: each level's effect points, divided by
+        // attr_exp, plus the flat bonuses (effect_attr) of development levels and fate simulation stages.
+        private double[] Research(JsonObject blueprint)
+        {
+            var development = new double[ShipGrowth.Count];
+            var attrExp = blueprint["attr_exp"] as JsonArray ?? [];
+            var levels = (blueprint["strengthen_effect"] as JsonArray ?? []).Select(Long).ToList();
+            foreach (var levelId in levels)
+            {
+                if (blueprintLevels[levelId.ToString()]?["effect"] is JsonArray effect)
+                {
+                    for (var i = 0; i < RaisedStats.Length && i < effect.Count && i < attrExp.Count; i++)
+                    {
+                        development[RaisedStats[i]] += effect[i]!.GetValue<double>() / Math.Max(1, attrExp[i]!.GetValue<double>());
+                    }
+                }
+            }
+
+            foreach (var levelId in levels.Concat((blueprint["fate_strengthen"] as JsonArray ?? []).Select(Long)))
+            {
+                AddPairs(development, blueprintLevels[levelId.ToString()]?["effect_attr"] as JsonArray);
+            }
+
+            return development;
+        }
+
+        // MetaCharacter:getAttrAddition with every repair done: each repair item's bonus, plus every repair milestone's
+        // (repair_effect lists them by progress).
+        private double[] Meta(JsonObject meta)
+        {
+            var development = new double[ShipGrowth.Count];
+            foreach (var (name, node) in meta)
+            {
+                if (name.StartsWith("repair_", StringComparison.Ordinal) && name != "repair_effect" && node is JsonArray items)
+                {
+                    foreach (var item in items)
+                    {
+                        if (item?.GetValueKind() == JsonValueKind.Number && metaRepairs[Long(item).ToString()]?["effect_attr"] is JsonArray pair)
+                        {
+                            AddPair(development, pair);
+                        }
+                    }
+                }
+            }
+
+            foreach (var milestone in meta["repair_effect"] as JsonArray ?? [])
+            {
+                if (milestone is JsonArray { Count: 2 } entry && metaRepairEffects[Long(entry[1]).ToString()]?["effect_attr"] is JsonArray pairs)
+                {
+                    AddPairs(development, pairs);
+                }
+            }
+
+            return development;
+        }
+
+        // Every retrofit node at its top level (ship_data_trans lists the nodes per ship group). A node that swaps the
+        // ship to another statistics row ("ship_id" pairs) gives the row the retrofitted ship uses.
+        private (double[]? Bonus, GrowthRow? Row) Retrofit(string group, long id)
+        {
+            if (retrofits[group]?["transform_list"] is not JsonArray columns)
+            {
+                return (null, null);
+            }
+
+            var bonus = new double[ShipGrowth.Count];
+            GrowthRow? row = null;
+            foreach (var cell in columns.OfType<JsonArray>().SelectMany(c => c.OfType<JsonArray>()))
+            {
+                if (cell.Count < 2 || retrofitNodes[Long(cell[1]).ToString()] is not JsonObject node)
+                {
+                    continue;
+                }
+
+                foreach (var level in node["effect"] as JsonArray ?? [])
+                {
+                    foreach (var (name, value) in level as JsonObject ?? [])
+                    {
+                        if (attributeIndex.TryGetValue(name, out var index) && value?.GetValueKind() == JsonValueKind.Number)
+                        {
+                            bonus[index] += value.GetValue<double>();
+                        }
+                    }
+                }
+
+                foreach (var swap in (node["ship_id"] as JsonArray ?? []).OfType<JsonArray>())
+                {
+                    if (swap.Count == 2 && (row is null || Long(swap[0]) == id) && statistics[Long(swap[1]).ToString()] is JsonObject stats)
+                    {
+                        row = Row(stats);
+                    }
+                }
+            }
+
+            return (bonus, row);
+        }
+
+        private void AddPairs(double[] development, JsonArray? pairs)
+        {
+            foreach (var pair in pairs ?? [])
+            {
+                if (pair is JsonArray entry)
+                {
+                    AddPair(development, entry);
+                }
+            }
+        }
+
+        // ["durability", 199]
+        private void AddPair(double[] development, JsonArray pair)
+        {
+            if (pair.Count == 2 && attributeIndex.TryGetValue(Text(pair[0]), out var index) && pair[1]?.GetValueKind() == JsonValueKind.Number)
+            {
+                development[index] += pair[1]!.GetValue<double>();
+            }
+        }
     }
 
     // The EN client still names the Bilibili collaboration in Chinese, so that one name is given here.
