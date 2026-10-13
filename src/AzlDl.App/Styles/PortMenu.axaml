@@ -39,7 +39,7 @@
   <x:Boolean x:Key="ShipNameUppercase">True</x:Boolean>
 
   <!-- Stat tiles, as on the game's ship screen. -->
-  <DataTemplate x:Key="StatsTemplate" x:DataType="data:ShipInfo">
+  <DataTemplate x:Key="StatsTemplate" x:DataType="data:StatSheet">
     <ItemsControl ItemsSource="{Binding Stats}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
@@ -51,7 +51,11 @@
           <controls:ChamferBorder Chamfer="10" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Margin="0,0,8,8"
                                   Padding="12,8">
             <StackPanel Spacing="2">
-              <TextBlock Classes="muted" Text="{Binding Label}" />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <controls:GameGlyph Art="{Binding Icon, StringFormat='attr_{0}'}" Width="18" Height="16"
+                                    Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+                <TextBlock Classes="muted" Text="{Binding Label}" />
+              </StackPanel>
               <TextBlock Classes="data value" FontSize="22" FontWeight="SemiBold" Text="{Binding Value}" />
             </StackPanel>
           </controls:ChamferBorder>

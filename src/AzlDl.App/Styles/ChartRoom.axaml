@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:data="using:AzlDl.Core.Data">
+                    xmlns:data="using:AzlDl.Core.Data"
+                    xmlns:controls="using:AzlDl.App.Controls">
   <!-- Chart room: cool chart paper, navy ink, chart magenta (the color nautical charts use for lights and hazards). -->
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
@@ -38,7 +39,7 @@
   <x:Boolean x:Key="ShipNameUppercase">True</x:Boolean>
 
   <!-- Ruled rows with dashed dividers, two columns. -->
-  <DataTemplate x:Key="StatsTemplate" x:DataType="data:ShipInfo">
+  <DataTemplate x:Key="StatsTemplate" x:DataType="data:StatSheet">
     <ItemsControl ItemsSource="{Binding Stats}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
@@ -47,10 +48,12 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="data:StatValue">
-          <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,28,0">
-            <TextBlock Classes="muted" Text="{Binding Label}" Margin="0,8" />
-            <TextBlock Grid.Column="1" Classes="data value" Text="{Binding Value}" Margin="0,8" />
-            <Line Grid.Row="1" Grid.ColumnSpan="2" StartPoint="0,0.5" EndPoint="2000,0.5" Height="1"
+          <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" Margin="0,0,28,0">
+            <controls:GameGlyph Art="{Binding Icon, StringFormat='attr_{0}'}" Width="18" Height="16" Margin="0,0,8,0"
+                                Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Classes="muted" Text="{Binding Label}" Margin="0,8" />
+            <TextBlock Grid.Column="2" Classes="data value" Text="{Binding Value}" Margin="0,8" />
+            <Line Grid.Row="1" Grid.ColumnSpan="3" StartPoint="0,0.5" EndPoint="2000,0.5" Height="1"
                   Stroke="{DynamicResource LineBrush}" StrokeThickness="1" StrokeDashArray="4,3" ClipToBounds="True" />
           </Grid>
         </DataTemplate>

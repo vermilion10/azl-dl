@@ -163,11 +163,10 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
 
     public bool CanDownloadImages => (ImagesMissing > 0 || !HasGameArt) && !ImagesBusy;
 
-    // Card images are about 30 KB each.
-    // Card images are about 30 KB each; the frames and badges about 1.4 MB together.
+    // Card images are about 30 KB each; the frames, badges and icons about 2.5 MB together.
     public string ImageDownloadTitle => ImagesMissing > 0
-        ? $"Download {Count(ImagesMissing)} card images (about {Math.Max(1, ImagesMissing * 30 / 1024) + (HasGameArt ? 0 : 1)} MB)"
-        : "Download the game's card frames (about 1 MB)";
+        ? $"Download {Count(ImagesMissing)} card images (about {Math.Max(1, ImagesMissing * 30 / 1024) + (HasGameArt ? 0 : 3)} MB)"
+        : "Download the game's card frames and icons (about 3 MB)";
 
     private static string Count(int value) => value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -183,7 +182,43 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
     public string ShownTitle => Ships.Count == all.Count ? $"{Count(all.Count)} ships" : $"{Count(Ships.Count)} of {Count(all.Count)} ships";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats), nameof(HasRetrofit), nameof(DevelopmentTitle))]
     private ShipInfo? selectedShip;
+
+    // The stat sheet's settings. Level 120 at 100 affinity, fully enhanced, is the usual point of comparison.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats))]
+    private int statLevel = 120;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats))]
+    private AffinityLevel? statAffinity;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats))]
+    private bool statDeveloped = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats))]
+    private bool statRetrofit = true;
+
+    public int MaxLevel => ShipGrowth.MaxLevel;
+
+    public IReadOnlyList<AffinityLevel> AffinityLevels => catalog?.AffinityLevels ?? [];
+
+    public StatSheet? Stats => SelectedShip is { } ship && catalog is not null
+        ? new StatSheet(catalog.StatsAt(ship, StatLevel, StatAffinity ?? new AffinityLevel("", 0), StatDeveloped, StatRetrofit && HasRetrofit))
+        : null;
+
+    public bool HasRetrofit => SelectedShip?.Growth?.HasRetrofit == true;
+
+    // What "developed" means for this ship.
+    public string DevelopmentTitle => SelectedShip?.Growth?.Kind switch
+    {
+        DevelopmentKind.Research => "All development levels and fate simulation",
+        DevelopmentKind.Meta => "All repairs",
+        _ => "Fully enhanced",
+    };
 
     [ObservableProperty]
     private SkinInfo? selectedSkin;
@@ -330,6 +365,8 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         {
             catalog = await Task.Run(() => ShipCatalog.Load(folder));
             all = catalog.Ships;
+            OnPropertyChanged(nameof(AffinityLevels));
+            StatAffinity = catalog.AffinityLevels.FirstOrDefault(a => a.Bonus >= 0.06) ?? catalog.AffinityLevels[^1];
             BuildGallery();
             ApplyFilter();
             SelectedShip = Ships.FirstOrDefault(s => s.EnglishName.Contains("Enterprise", StringComparison.Ordinal)) ?? Ships.FirstOrDefault();
@@ -403,7 +440,8 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
         var picked = FilterGroups.SelectMany(g => g.Chips.Where(c => c.IsChecked).Select(c => (g.Title, c.Label))).ToHashSet();
         string[] tierCodes = ["N", "R", "SR", "SSR", "UR"];
         var rarities = all.GroupBy(s => s.Rarity).OrderBy(g => g.Key)
-            .Select(g => FilterChip.For<ShipInfo>(g.First().RarityName, tierCodes[g.Key - 2], s => s.Rarity == g.Key, (RarityTier)(g.Key - 2)));
+            .Select(g => FilterChip.For<ShipInfo>(g.First().RarityName, tierCodes[g.Key - 2], s => s.Rarity == g.Key, (RarityTier)(g.Key - 2),
+                $"rarity_{g.Key - 1}"));
 
         var collections = new (ShipCollection Collection, string Title)[]
         {
@@ -411,7 +449,9 @@ public sealed partial class ShipsViewModel(AppSettings settings) : ObservableObj
             (ShipCollection.Collab, "Collab"),
         }.Where(c => all.Any(s => s.Collection == c.Collection))
             .Select(c => FilterChip.For<ShipInfo>(c.Title, "", s => s.Collection == c.Collection,
-                c.Collection switch { ShipCollection.Research => RarityTier.Priority, ShipCollection.Meta => RarityTier.Meta, _ => null }));
+                c.Collection switch { ShipCollection.Research => RarityTier.Priority, ShipCollection.Meta => RarityTier.Meta, _ => null },
+                // Research shows its PRY letter; META and collaborations their faction emblems (103 is the shared collab one).
+                c.Collection switch { ShipCollection.Research => "rarity_4_0", ShipCollection.Meta => "nation_97", ShipCollection.Collab => "nation_103", _ => "" }));
 
         var roles = new (string Team, string Title)[] { ("vanguard", "Vanguard"), ("main", "Main fleet"), ("submarine", "Submarine") }
             .Where(r => all.Any(s => s.TeamType == r.Team))

@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:data="using:AzlDl.Core.Data">
+                    xmlns:data="using:AzlDl.Core.Data"
+                    xmlns:controls="using:AzlDl.App.Controls">
   <!-- Registry book: bright paper, black ink, one sea-green accent; serif italic for ship names only. -->
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
@@ -38,7 +39,7 @@
   <x:Boolean x:Key="ShipNameUppercase">False</x:Boolean>
 
   <!-- Stat name, dotted leader, value: the register's own way of listing figures. -->
-  <DataTemplate x:Key="StatsTemplate" x:DataType="data:ShipInfo">
+  <DataTemplate x:Key="StatsTemplate" x:DataType="data:StatSheet">
     <ItemsControl ItemsSource="{Binding Stats}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
@@ -47,11 +48,13 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="data:StatValue">
-          <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,6,28,6">
-            <TextBlock Classes="muted" Text="{Binding Label}" VerticalAlignment="Bottom" />
-            <Line Grid.Column="1" StartPoint="0,0.5" EndPoint="2000,0.5" Height="1" Stroke="{DynamicResource MutedBrush}"
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,6,28,6">
+            <controls:GameGlyph Art="{Binding Icon, StringFormat='attr_{0}'}" Width="18" Height="16" Margin="0,0,8,0"
+                                Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Bottom" />
+            <TextBlock Grid.Column="1" Classes="muted" Text="{Binding Label}" VerticalAlignment="Bottom" />
+            <Line Grid.Column="2" StartPoint="0,0.5" EndPoint="2000,0.5" Height="1" Stroke="{DynamicResource MutedBrush}"
                   StrokeThickness="1" StrokeDashArray="1,3" VerticalAlignment="Bottom" Margin="6,0,6,5" ClipToBounds="True" />
-            <TextBlock Grid.Column="2" Classes="data value" Text="{Binding Value}" VerticalAlignment="Bottom" />
+            <TextBlock Grid.Column="3" Classes="data value" Text="{Binding Value}" VerticalAlignment="Bottom" />
           </Grid>
         </DataTemplate>
       </ItemsControl.ItemTemplate>

@@ -185,18 +185,25 @@
 
               <StackPanel>
                 <TextBlock Classes="heading" Text="Stats" />
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,0,0,8" IsVisible="{Binding CanEnhance}">
+                  <TextBlock Classes="muted" Text="Enhancement" VerticalAlignment="Center" />
+                  <Slider Grid.Column="1" Minimum="0" Maximum="{Binding MaxLevel}" Value="{Binding Level}"
+                          IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="1"
+                          AutomationProperties.Name="Enhancement level" />
+                </Grid>
                 <Grid ColumnDefinitions="*,80,80" Margin="0,0,0,6">
                   <TextBlock Grid.Column="1" Classes="muted data" FontSize="12" Text="+0" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="2" Classes="muted data" FontSize="12" HorizontalAlignment="Right"
-                             Text="{Binding SelectedEquipment.MaxLevel, StringFormat='+{0}'}" />
+                  <TextBlock Grid.Column="2" Classes="muted data" FontSize="12" HorizontalAlignment="Right" Text="{Binding LevelTitle}" />
                 </Grid>
-                <ItemsControl ItemsSource="{Binding SelectedEquipment.Stats}">
+                <ItemsControl ItemsSource="{Binding Stats}">
                   <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="data:EquipmentStat">
-                      <Grid ColumnDefinitions="*,80,80" Margin="0,4">
-                        <TextBlock Text="{Binding Label}" />
-                        <TextBlock Grid.Column="1" Classes="data" Text="{Binding Base}" HorizontalAlignment="Right" />
-                        <TextBlock Grid.Column="2" Classes="data value" Text="{Binding Max}" HorizontalAlignment="Right" />
+                    <DataTemplate x:DataType="vm:EquipmentStatRow">
+                      <Grid ColumnDefinitions="Auto,*,80,80" Margin="0,4">
+                        <controls:GameGlyph Art="{Binding Icon, StringFormat='attr_{0}'}" Width="18" Height="16" Margin="0,0,8,0"
+                                            Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{Binding Label}" />
+                        <TextBlock Grid.Column="2" Classes="data" Text="{Binding Base}" HorizontalAlignment="Right" />
+                        <TextBlock Grid.Column="3" Classes="data value" Text="{Binding Value}" HorizontalAlignment="Right" />
                       </Grid>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>

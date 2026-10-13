@@ -226,6 +226,36 @@ public class StyleTests
         Assert.True(ships.IsGallery);
     }
 
+    // Stats follow the game's own formula (model/vo/ship.lua): growth per level, extra growth past 100, enhancement,
+    // research and META bonuses, affinity, then retrofit nodes.
+    [Fact]
+    public void Ship_stats_follow_the_game_formula()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+
+        var catalog = ShipCatalog.Load(dataFolder!);
+        var love = catalog.AffinityLevels.Single(a => a.Bonus == 0.06);
+        string Stat(long group, int level, string label, bool developed = true, bool retrofit = false) =>
+            catalog.StatsAt(catalog.Ships.Single(s => s.GroupId == group), level, love, developed, retrofit).Single(s => s.Label == label).Value;
+
+        // USS Enterprise at 120 and 100 affinity: HP 2566 + 119 x 27.54, plus 6%; aviation adds its full enhancement.
+        Assert.Equal("6193", Stat(10706, 120, "HP"));
+        Assert.Equal("430", Stat(10706, 120, "AVI"));
+        Assert.Equal("Medium", Stat(10706, 120, "Armor"));
+        Assert.Equal("13", Stat(10706, 120, "Cost"));
+        Assert.True(int.Parse(Stat(10706, 120, "AVI", developed: false)) < 430);
+
+        // Eldridge's retrofit adds its node bonuses on top.
+        Assert.Equal("1720", Stat(10126, 120, "HP"));
+        Assert.Equal("1885", Stat(10126, 120, "HP", retrofit: true));
+
+        // Neptune's development levels add a flat HP bonus and fate simulation luck.
+        Assert.Equal(DevelopmentKind.Research, catalog.Ships.Single(s => s.GroupId == 29901).Growth!.Kind);
+        Assert.Equal("15", Stat(29901, 120, "LCK"));
+        Assert.Equal("0", Stat(29901, 120, "LCK", developed: false));
+    }
+
     // Equipment lists each codex entry once with its stats at +0 and fully enhanced, filters like the ship gallery, and
     // shows the picked piece in the detail pane.
     [AvaloniaFact]
@@ -253,6 +283,8 @@ public class StyleTests
         Assert.Equal(6, gun.MaxLevel);
         Assert.Contains(gun.Stats, s => s.Label == "Damage" && s.Base == "48 x 2" && s.Max == "86 x 2");
         Assert.Contains(gun.Stats, s => s.Label == "FP" && s.Base == "12");
+        Assert.Equal(7, gun.Stats.Single(s => s.Label == "Damage").Values.Count);
+        Assert.Equal("damage", gun.Stats.Single(s => s.Label == "Damage").Icon);
         Assert.Contains("Battleship", gun.UsableBy);
         Assert.Equal("Volley", gun.Speciality);
 

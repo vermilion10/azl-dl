@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using AzlDl.App.Controls;
 using AzlDl.Core.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -53,8 +54,12 @@ public sealed partial class FilterChip(string label, string code, Func<object, b
     public static FilterChip For<T>(string label, string code, Func<T, bool> matches, RarityTier? tier = null, string icon = "") =>
         new(label, code, item => item is T value && matches(value), tier, icon);
 
-    // The game's badge or emblem for this value (hull_3, nation_1) when its art is downloaded.
+    // The game's badge or emblem for this value (hull_3, rarity_4, nation_1) when its art is downloaded.
     public string Icon { get; } = icon;
+
+    // Rarity letters and tier badges say what the code and the colour swatch would, so they replace both once downloaded.
+    private bool ShowsLetterBadge => (Icon.StartsWith("rarity_", StringComparison.Ordinal) || Icon.StartsWith("tech_", StringComparison.Ordinal))
+                                     && GameArt.Get(Icon) is not null;
 
     // Faction emblems are white artwork, drawn in the text colour so they show on light and dark chips alike.
     public bool IconIsEmblem => Icon.StartsWith("nation_", StringComparison.Ordinal);
@@ -66,12 +71,13 @@ public sealed partial class FilterChip(string label, string code, Func<object, b
     // A short code shown before the label (SSR, DD); empty when the label says it all.
     public string Code { get; } = code;
 
-    public bool HasCode => Code.Length > 0;
+    public bool HasCode => Code.Length > 0 && !ShowsLetterBadge;
 
     // Rarity chips carry their tier so they show the card frame's colour.
     public RarityTier? Tier { get; } = tier;
 
-    public bool HasTier => Tier is not null;
+    // The swatch stands in for the game's art, so any downloaded icon replaces it.
+    public bool HasTier => Tier is not null && (Icon.Length == 0 || GameArt.Get(Icon) is null);
 
     public Func<object, bool> Matches { get; } = matches;
 

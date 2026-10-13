@@ -10,6 +10,9 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace AzlDl.App.ViewModels;
 
+// One stat row of the detail pane: the value at +0 and at the chosen enhancement level.
+public sealed record EquipmentStatRow(string Label, string Icon, string Base, string Value);
+
 // The equipment gallery: every codex entry as a card, filters on the left and the selected piece's details on the right.
 public sealed partial class EquipmentViewModel(AppSettings settings) : ObservableObject
 {
@@ -59,10 +62,24 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
     private int columns = 6;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasSelection))]
+    [NotifyPropertyChangedFor(nameof(HasSelection), nameof(MaxLevel), nameof(CanEnhance))]
     private EquipmentInfo? selectedEquipment;
 
     public bool HasSelection => SelectedEquipment is not null;
+
+    // The enhancement level the stats are shown at, next to +0; it starts at the top level.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Stats), nameof(LevelTitle))]
+    private int level;
+
+    public int MaxLevel => SelectedEquipment?.MaxLevel ?? 0;
+
+    public bool CanEnhance => MaxLevel > 0;
+
+    public string LevelTitle => $"+{Level}";
+
+    public IReadOnlyList<EquipmentStatRow> Stats => SelectedEquipment?.Stats
+        .Select(s => new EquipmentStatRow(s.Label, s.Icon, s.Base, s.At(Level))).ToList() ?? [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanDownloadImages), nameof(ImageDownloadTitle))]
@@ -84,8 +101,8 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
 
     // Equipment icons are about 9 KB each.
     public string ImageDownloadTitle => ImagesMissing > 0
-        ? $"Download {Count(ImagesMissing)} icons (about {Math.Max(1, ImagesMissing * 9 / 1024) + (HasGameArt ? 0 : 1)} MB)"
-        : "Download the game's icon frames (about 1 MB)";
+        ? $"Download {Count(ImagesMissing)} icons (about {Math.Max(1, ImagesMissing * 9 / 1024) + (HasGameArt ? 0 : 3)} MB)"
+        : "Download the game's icon frames and stat icons (about 3 MB)";
 
     public bool NoMatches => IsReady && Shown.Count == 0;
 
@@ -150,6 +167,8 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
         }
 
         OnPropertyChanged(nameof(SelectedCard));
+        Level = MaxLevel;
+        OnPropertyChanged(nameof(Stats));
     }
 
     [RelayCommand]
@@ -190,7 +209,8 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
         string[] names = ["Common", "Rare", "Elite", "Super Rare", "Ultra Rare"];
         string[] codes = ["N", "R", "SR", "SSR", "UR"];
         var rarities = all.GroupBy(e => e.Tier).OrderByDescending(g => g.Key)
-            .Select(g => FilterChip.For<EquipmentInfo>(names[(int)g.Key], codes[(int)g.Key], e => e.Tier == g.Key, g.Key));
+            .Select(g => FilterChip.For<EquipmentInfo>(names[(int)g.Key], codes[(int)g.Key], e => e.Tier == g.Key, g.Key,
+                $"rarity_{(int)g.Key + 1}"));
         var types = all.GroupBy(e => e.TypeName).OrderBy(g => g.Min(e => e.TypeId))
             .Select(g => FilterChip.For<EquipmentInfo>(g.Key, "", e => e.TypeName == g.Key));
         var techs = all.GroupBy(e => e.Tech).OrderByDescending(g => g.Key)

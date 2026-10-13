@@ -263,11 +263,34 @@
               </WrapPanel>
             </StackPanel>
 
-            <StackPanel>
+            <StackPanel Spacing="10">
               <TextBlock Classes="heading" Text="Stats" />
-              <ContentControl Content="{Binding SelectedShip}" ContentTemplate="{DynamicResource StatsTemplate}" />
-              <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0"
-                         Text="Level 1, fully limit broken, from ship_data_statistics." />
+              <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                <TextBlock Classes="muted" Text="Level" VerticalAlignment="Center" />
+                <Slider Grid.Column="1" Minimum="1" Maximum="{Binding MaxLevel}" Value="{Binding StatLevel}"
+                        IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="10"
+                        AutomationProperties.Name="Level" />
+                <NumericUpDown Grid.Column="2" Minimum="1" Maximum="{Binding MaxLevel}" Value="{Binding StatLevel}"
+                               Increment="1" FormatString="0" Width="120" AutomationProperties.Name="Level" />
+              </Grid>
+              <WrapPanel ItemSpacing="16" LineSpacing="8">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="muted" Text="Affinity" VerticalAlignment="Center" />
+                  <ComboBox ItemsSource="{Binding AffinityLevels}" SelectedItem="{Binding StatAffinity}" MinWidth="180"
+                            AutomationProperties.Name="Affinity">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="data:AffinityLevel">
+                        <TextBlock Text="{Binding Title}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+                <CheckBox IsChecked="{Binding StatDeveloped}" Content="{Binding DevelopmentTitle}" />
+                <CheckBox IsChecked="{Binding StatRetrofit}" Content="Retrofitted" IsVisible="{Binding HasRetrofit}" />
+              </WrapPanel>
+              <ContentControl Content="{Binding Stats}" ContentTemplate="{DynamicResource StatsTemplate}" />
+              <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap"
+                         Text="Fully limit broken, without equipment. Worked out the way the game does it." />
             </StackPanel>
 
             <StackPanel>
