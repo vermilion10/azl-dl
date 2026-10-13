@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using AzlDl.App.Controls;
 using AzlDl.App.Settings;
 using AzlDl.Core;
 using AzlDl.Core.Art;
@@ -74,10 +75,17 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
     [ObservableProperty]
     private string imageMessage = "";
 
-    public bool CanDownloadImages => ImagesMissing > 0 && !ImagesBusy;
+    // Whether the game's icon backgrounds and tier badges (art/ui) are downloaded; without them cards are drawn.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadImages), nameof(ImageDownloadTitle))]
+    private bool hasGameArt;
+
+    public bool CanDownloadImages => (ImagesMissing > 0 || !HasGameArt) && !ImagesBusy;
 
     // Equipment icons are about 9 KB each.
-    public string ImageDownloadTitle => $"Download {Count(ImagesMissing)} icons (about {Math.Max(1, ImagesMissing * 9 / 1024)} MB)";
+    public string ImageDownloadTitle => ImagesMissing > 0
+        ? $"Download {Count(ImagesMissing)} icons (about {Math.Max(1, ImagesMissing * 9 / 1024) + (HasGameArt ? 0 : 1)} MB)"
+        : "Download the game's icon frames (about 1 MB)";
 
     public bool NoMatches => IsReady && Shown.Count == 0;
 
@@ -168,7 +176,16 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
         }
 
         ImagesMissing = MissingIcons().Count;
+        GameArt.Use(fetcher.GameArtFolder);
+        HasGameArt = fetcher.HasGameArt;
         SelectedSort ??= SortOptions[0];
+        BuildFilters();
+    }
+
+    // Rebuilt after the game's art is downloaded so chips pick up their badges; picked chips stay picked.
+    private void BuildFilters()
+    {
+        var picked = FilterGroups.SelectMany(g => g.Chips.Where(c => c.IsChecked).Select(c => (g.Title, c.Label))).ToHashSet();
 
         string[] names = ["Common", "Rare", "Elite", "Super Rare", "Ultra Rare"];
         string[] codes = ["N", "R", "SR", "SSR", "UR"];
@@ -177,14 +194,20 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
         var types = all.GroupBy(e => e.TypeName).OrderBy(g => g.Min(e => e.TypeId))
             .Select(g => FilterChip.For<EquipmentInfo>(g.Key, "", e => e.TypeName == g.Key));
         var techs = all.GroupBy(e => e.Tech).OrderByDescending(g => g.Key)
-            .Select(g => FilterChip.For<EquipmentInfo>(g.Key == 0 ? "No tier" : $"Tier {g.Key}", $"T{g.Key}", e => e.Tech == g.Key));
+            .Select(g => FilterChip.For<EquipmentInfo>(g.Key == 0 ? "No tier" : $"Tier {g.Key}", $"T{g.Key}", e => e.Tech == g.Key,
+                icon: g.Key > 0 ? $"tech_{g.Key}" : ""));
         var factions = all.GroupBy(e => e.NationName).OrderBy(g => g.Min(e => e.NationId))
-            .Select(g => FilterChip.For<EquipmentInfo>(g.Key, "", e => e.NationName == g.Key));
+            .Select(g => FilterChip.For<EquipmentInfo>(g.Key, "", e => e.NationName == g.Key, icon: $"nation_{g.Min(e => e.NationId)}"));
 
         FilterGroups.Clear();
         foreach (var (title, chips) in new[] { ("Rarity", rarities), ("Type", types), ("Tier", techs), ("Faction", factions) })
         {
-            FilterGroups.Add(new FilterGroup(title, chips, ApplyFilter));
+            var group = new FilterGroup(title, chips, ApplyFilter);
+            FilterGroups.Add(group);
+            foreach (var chip in group.Chips.Where(c => picked.Contains((title, c.Label))))
+            {
+                chip.IsChecked = true;
+            }
         }
     }
 
@@ -222,7 +245,7 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
     private async Task DownloadImagesAsync()
     {
         var icons = MissingIcons();
-        if (icons.Count == 0)
+        if (icons.Count == 0 && HasGameArt)
         {
             return;
         }
@@ -232,6 +255,13 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
         try
         {
             var fetcher = Fetcher();
+            if (!HasGameArt)
+            {
+                await Task.Run(() => fetcher.FetchGameArtAsync());
+                GameArt.Refresh();
+                HasGameArt = fetcher.HasGameArt;
+            }
+
             await Task.Run(() => fetcher.FetchImagesAsync(icons.Select(i => AssetFetcher.EquipmentImageFolder + i).ToList()));
             foreach (var card in cards.Values.Where(c => !c.HasImage))
             {
@@ -244,6 +274,9 @@ public sealed partial class EquipmentViewModel(AppSettings settings) : Observabl
             }
 
             ImagesMissing = MissingIcons().Count;
+            // New row and chip objects bind again, now with the game's backgrounds and badges.
+            BuildFilters();
+            BuildRows();
             ImageMessage = ImagesMissing == 0 ? "" : $"The game has no icon for {Count(ImagesMissing)} items.";
             OnPropertyChanged(nameof(SelectedCard));
         }

@@ -81,7 +81,10 @@
                               ToolTip.Tip="{Binding Equipment.Name}">
                         <!-- The outer ring marks the piece shown in the detail pane. -->
                         <Border Classes="selectRing" Classes.selected="{Binding IsSelected}">
-                          <Border Width="{x:Static vm:EquipmentViewModel.CardWidth}" CornerRadius="4" BorderThickness="2" ClipToBounds="True"
+                          <!-- The game's icon background for the rarity, the icon, tier badge and stars. Until the game's art is
+                               downloaded the card is drawn in the rarity's colours with text tags. -->
+                          <Border Width="{x:Static vm:EquipmentViewModel.CardWidth}" CornerRadius="4" ClipToBounds="True"
+                                  Classes="equipCard" Classes.art="{Binding #Root.((vm:EquipmentViewModel)DataContext).HasGameArt}"
                                   BorderBrush="{Binding Equipment.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
                                   Background="{Binding Equipment.Tier, Converter={x:Static controls:RarityBrushes.Background}}">
                             <DockPanel>
@@ -91,14 +94,33 @@
                                            TextAlignment="Center" VerticalAlignment="Center" />
                               </Border>
                               <Panel Height="104">
+                                <Image Stretch="Fill"
+                                       Source="{Binding Equipment.RarityKey, Converter={x:Static controls:GameArt.Image}, ConverterParameter=equip_bg_}" />
                                 <Image Source="{Binding Image}" Stretch="Uniform" Margin="6,6,6,14" />
                                 <TextBlock Text="?" IsVisible="{Binding !HasImage}" FontSize="44" FontWeight="Bold" Foreground="#B3FFFFFF"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                <Border Classes="cardTag" HorizontalAlignment="Left" CornerRadius="0,0,4,0"
-                                        IsVisible="{Binding Equipment.TechCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                  <TextBlock Text="{Binding Equipment.TechCode}" />
-                                </Border>
-                                <TextBlock Classes="stars" Text="{Binding Equipment.Stars}" />
+                                <Image Width="28" Height="23" Margin="3" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                       Source="{Binding Equipment.Tech, Converter={x:Static controls:GameArt.Image}, ConverterParameter=tech_}" />
+                                <Panel IsVisible="{Binding !#Root.((vm:EquipmentViewModel)DataContext).HasGameArt}">
+                                  <Border Classes="cardTag" HorizontalAlignment="Left" CornerRadius="0,0,4,0"
+                                          IsVisible="{Binding Equipment.TechCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    <TextBlock Text="{Binding Equipment.TechCode}" />
+                                  </Border>
+                                  <TextBlock Classes="stars" Text="{Binding Equipment.Stars}" />
+                                </Panel>
+                                <ItemsControl ItemsSource="{Binding Equipment.StarSlots}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2"
+                                              IsVisible="{Binding #Root.((vm:EquipmentViewModel)DataContext).HasGameArt}">
+                                  <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                      <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                  </ItemsControl.ItemsPanel>
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                      <Image Width="12" Height="12" Source="{Binding Source={x:Static controls:GameArt.Star}}" />
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                               </Panel>
                             </DockPanel>
                           </Border>
@@ -125,14 +147,30 @@
                        Text="Pick a piece of equipment to see its stats at +0 and fully enhanced." />
             <StackPanel IsVisible="{Binding HasSelection}" Spacing="24">
               <StackPanel Orientation="Horizontal" Spacing="18">
-                <Border Width="112" Height="112" CornerRadius="4" BorderThickness="2" ClipToBounds="True" VerticalAlignment="Top"
+                <Border Width="112" Height="112" CornerRadius="4" ClipToBounds="True" VerticalAlignment="Top"
+                        Classes="equipCard" Classes.art="{Binding HasGameArt}"
                         BorderBrush="{Binding SelectedEquipment.Tier, Converter={x:Static controls:RarityBrushes.Border}}"
                         Background="{Binding SelectedEquipment.Tier, Converter={x:Static controls:RarityBrushes.Background}}">
                   <Panel>
+                    <Image Stretch="Fill"
+                           Source="{Binding SelectedEquipment.RarityKey, Converter={x:Static controls:GameArt.Image}, ConverterParameter=equip_bg_}" />
                     <Image Source="{Binding SelectedCard.Image}" Stretch="Uniform" Margin="8,8,8,16" />
                     <TextBlock Text="?" IsVisible="{Binding !SelectedCard.HasImage}" FontSize="44" FontWeight="Bold"
                                Foreground="#B3FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <TextBlock Classes="stars" Text="{Binding SelectedEquipment.Stars}" />
+                    <TextBlock Classes="stars" Text="{Binding SelectedEquipment.Stars}" IsVisible="{Binding !HasGameArt}" />
+                    <ItemsControl ItemsSource="{Binding SelectedEquipment.StarSlots}" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,3"
+                                              IsVisible="{Binding #Root.((vm:EquipmentViewModel)DataContext).HasGameArt}">
+                                  <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                      <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                  </ItemsControl.ItemsPanel>
+                                  <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                      <Image Width="14" Height="14" Source="{Binding Source={x:Static controls:GameArt.Star}}" />
+                                    </DataTemplate>
+                                  </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                   </Panel>
                 </Border>
                 <StackPanel Spacing="4" VerticalAlignment="Center" MaxWidth="210">

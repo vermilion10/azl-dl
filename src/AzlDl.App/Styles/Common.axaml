@@ -212,6 +212,14 @@
     <Setter Property="Effect" Value="drop-shadow(0 1 2 #E6000000)" />
   </Style>
 
+  <!-- With the game's icon backgrounds the card needs no drawn border, as in the game. -->
+  <Style Selector="Border.equipCard">
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="Border.equipCard.art">
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
   <!-- The ring around the equipment card shown in the detail pane. -->
   <Style Selector="Border.selectRing">
     <Setter Property="BorderThickness" Value="2" />
