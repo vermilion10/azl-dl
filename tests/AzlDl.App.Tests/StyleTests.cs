@@ -68,6 +68,8 @@ public class StyleTests
         Assert.True(main.Ships.IsReady, main.Ships.Message);
         Assert.True(main.Ships.IsGallery);
         Assert.NotEmpty(main.Ships.CardRows);
+        // Only the rows on screen are built; realizing all ~900 cards froze the window for seconds.
+        Assert.InRange(window.GetVisualDescendants().OfType<Button>().Count(b => b.Classes.Contains("card")), 1, 120);
         await WaitUntil(() => main.Ships.CardRows.SelectMany(r => r.Cards).Where(c => c.HasImage).Take(3).All(c => c.Image is not null));
         var gallery = window.CaptureRenderedFrame();
 #pragma warning disable CS0618
