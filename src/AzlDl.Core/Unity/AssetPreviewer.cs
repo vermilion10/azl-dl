@@ -11,10 +11,11 @@ public enum PreviewKind
     Text,
     Binary,
     Fields,
+    Audio,
 }
 
 // One asset ready to show and to save. Image previews save as PNG; text and binary TextAssets save as their raw
-// bytes; everything else saves as its field tree.
+// bytes, sound cues as WAV; everything else saves as its field tree.
 public sealed record AssetPreview(PreviewKind Kind, string FileName, RgbaImage? Image, string Text, byte[] Bytes)
 {
     public void Save(string path)
@@ -43,7 +44,7 @@ public static class AssetPreviewer
         {
             var bundle = BundleInspector.Open(manager, bundlePath);
             var index = bundle.file.BlockAndDirInfo.DirectoryInfos.FindIndex(d => d.Name == asset.File);
-            if (index < 0 || !bundle.file.IsAssetsFile(index))
+            if (index < 0 || !BundleInspector.IsSerializedFile(bundle, index))
             {
                 throw new InvalidDataException($"The bundle has no serialized file named {asset.File}.");
             }
@@ -197,6 +198,9 @@ public static class AssetPreviewer
         return result;
     }
 
+    // Bytes shown as text when they read as text, otherwise as a hex dump; saved as they are.
+    internal static AssetPreview RawPreview(string name, byte[] bytes) => TextAssetPreview(name, bytes);
+
     private static AssetPreview TextAssetPreview(string name, byte[] bytes)
     {
         if (LooksLikeText(bytes))
@@ -222,7 +226,7 @@ public static class AssetPreviewer
     }
 
     // Valid UTF-8 with no control characters other than whitespace.
-    private static bool LooksLikeText(byte[] bytes)
+    internal static bool LooksLikeText(byte[] bytes)
     {
         try
         {

@@ -74,7 +74,9 @@
             </StackPanel>
             <WrapPanel>
               <Button Classes="primary" Content="Save object…" Click="OnSaveAsset" IsEnabled="{Binding HasPreview}"
-                      Margin="0,0,12,8" ToolTip.Tip="Pictures save as PNG, text assets as their original bytes, anything else as its field values" />
+                      Margin="0,0,12,8" ToolTip.Tip="Pictures save as PNG, sounds as WAV, data tables as JSON, text assets as their original bytes, anything else as its field values" />
+              <Button Content="Play" Command="{Binding PlayPreviewCommand}" IsVisible="{Binding CanPlay}" MinHeight="44" Padding="18,10"
+                      Margin="0,0,12,8" />
               <Button Content="Extract bundle" Command="{Binding ExtractBundleCommand}" MinHeight="44" Padding="18,10"
                       Margin="0,0,12,8" ToolTip.Tip="Write every picture and text file in the bundle to the art folder" />
             </WrapPanel>

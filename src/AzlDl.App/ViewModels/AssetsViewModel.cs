@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using AzlDl.App.Audio;
 using AzlDl.App.Settings;
 using AzlDl.Core.Art;
 using AzlDl.Core.Download;
@@ -61,7 +62,7 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
     private InspectedAsset? selectedAsset;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowsImage), nameof(ShowsText), nameof(HasPreview))]
+    [NotifyPropertyChangedFor(nameof(ShowsImage), nameof(ShowsText), nameof(HasPreview), nameof(CanPlay))]
     [NotifyCanExecuteChangedFor(nameof(SaveAssetCommand))]
     private AssetPreview? preview;
 
@@ -91,7 +92,19 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
 
     public bool ShowsImage => Preview?.Kind == PreviewKind.Image;
 
-    public bool ShowsText => Preview is { Kind: not PreviewKind.Image };
+    public bool ShowsText => Preview is { Kind: not (PreviewKind.Image or PreviewKind.Audio) };
+
+    // Sound cues from CRI banks play here; saving writes them as WAV.
+    public bool CanPlay => Preview?.Kind == PreviewKind.Audio && VoicePlayer.IsSupported;
+
+    [RelayCommand]
+    private void PlayPreview()
+    {
+        if (Preview is { Kind: PreviewKind.Audio } audio)
+        {
+            VoicePlayer.Play(audio.Bytes);
+        }
+    }
 
     public ObservableCollection<BundleFolder> Folders { get; } = [];
 
@@ -206,9 +219,7 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
         BundleReport report;
         try
         {
-            report = await Task.Run(() => BundleInspector.CanOpen(path)
-                ? BundleInspector.Inspect(path)
-                : throw new InvalidDataException("This file isn't a Unity bundle."));
+            report = await Task.Run(() => BundleInspector.CanOpen(path) ? BundleInspector.Inspect(path) : LooseFileReader.Inspect(path));
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
@@ -230,10 +241,13 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
             Assets.Add(asset);
         }
 
-        BundleMessage = $"{Format.Count(report.Assets.Count)} objects · Unity {report.UnityVersion}";
+        // Loose files report their format where bundles report the Unity version.
+        BundleMessage = report.Assets.FirstOrDefault()?.File == LooseFileReader.Marker
+            ? report.Assets.Count > 1 ? $"{Format.Count(report.Assets.Count)} cues · {report.UnityVersion}" : report.UnityVersion
+            : $"{Format.Count(report.Assets.Count)} objects · Unity {report.UnityVersion}";
 
         // Open on the first picture when there is one, since that's usually what the bundle is for.
-        var first = Assets.FirstOrDefault(a => a.Type == "Texture2D");
+        var first = Assets.FirstOrDefault(a => a.Type == "Texture2D") ?? (Assets.Count == 1 ? Assets[0] : null);
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             if (request == bundleRequest && SelectedAsset is null)
@@ -265,7 +279,7 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
         {
             var read = await Task.Run(() =>
             {
-                var result = AssetPreviewer.Read(path, asset);
+                var result = asset.File == LooseFileReader.Marker ? LooseFileReader.Read(path, asset) : AssetPreviewer.Read(path, asset);
                 return (result, Bitmap: result.Image is null ? null : ToBitmap(result.Image));
             });
 
@@ -284,6 +298,7 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
                 PreviewKind.Image => $"{read.result.Text} pixels",
                 PreviewKind.Text => $"Text, {Format.Size(read.result.Bytes.Length)}",
                 PreviewKind.Binary => $"Binary, {Format.Size(read.result.Bytes.Length)}. The first bytes are shown.",
+                PreviewKind.Audio => $"Sound, {read.result.Text}. Saves as WAV.",
                 _ => "Field values. Long arrays are cut short here and in the saved file.",
             };
         }

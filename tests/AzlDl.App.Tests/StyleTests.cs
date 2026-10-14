@@ -228,6 +228,29 @@ public class StyleTests
         Assert.True(ships.IsGallery);
     }
 
+    // Files in the asset folders that aren't Unity bundles still open: sound banks list their cues as WAV, the Lua data
+    // tables read as JSON.
+    [Fact]
+    public void Asset_browser_opens_sound_banks_and_data_tables()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+        var bundles = Path.Combine(dataFolder!, "AssetBundles");
+
+        var bank = Path.Combine(bundles, "cue", "cv-10517.b");
+        var cues = AzlDl.Core.Unity.LooseFileReader.Inspect(bank).Assets;
+        Assert.NotEmpty(cues);
+        var sound = AzlDl.Core.Unity.LooseFileReader.Read(bank, cues[0]);
+        Assert.Equal(AzlDl.Core.Unity.PreviewKind.Audio, sound.Kind);
+        Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(sound.Bytes, 0, 4));
+
+        var table = Path.Combine(bundles, "sharecfgdata", "aircraft_template");
+        var entry = Assert.Single(AzlDl.Core.Unity.LooseFileReader.Inspect(table).Assets);
+        var json = AzlDl.Core.Unity.LooseFileReader.Read(table, entry);
+        Assert.Equal("aircraft_template.json", json.FileName);
+        Assert.StartsWith("{", json.Text);
+    }
+
     // Stats follow the game's own formula (model/vo/ship.lua): growth per level, extra growth past 100, enhancement,
     // research and META bonuses, affinity, then retrofit nodes.
     [Fact]
