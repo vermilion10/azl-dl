@@ -52,6 +52,11 @@ public static class BundleInspector
         return manager.LoadBundleFile(new MemoryStream(ScriptBundleCipher.Decrypt(data)), path, unpackIfPacked: true);
     }
 
+    // Whether a bundle entry is a serialized file (Unity flags those with 4 in the bundle directory). AssetsTools'
+    // IsAssetsFile guesses from the first bytes instead, and some raw texture blobs (.resS) happen to pass that guess.
+    internal static bool IsSerializedFile(BundleFileInstance bundle, int index) =>
+        (bundle.file.BlockAndDirInfo.DirectoryInfos[index].Flags & 4) != 0;
+
     public static BundleReport Inspect(string path)
     {
         var manager = new AssetsManager();
@@ -65,7 +70,7 @@ public static class BundleInspector
             for (var index = 0; index < directory.Count; index++)
             {
                 files.Add(directory[index].Name);
-                if (!bundle.file.IsAssetsFile(index))
+                if (!IsSerializedFile(bundle, index))
                 {
                     continue;
                 }
@@ -110,7 +115,7 @@ public static class BundleInspector
             var matched = 0;
             for (var index = 0; index < bundle.file.BlockAndDirInfo.DirectoryInfos.Count; index++)
             {
-                if (!bundle.file.IsAssetsFile(index))
+                if (!IsSerializedFile(bundle, index))
                 {
                     continue;
                 }
