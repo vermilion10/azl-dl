@@ -1,3 +1,5 @@
+using System.Collections.Specialized;
+using System.ComponentModel;
 using Avalonia;
 using AzlDl.App.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -40,6 +42,64 @@ public sealed partial class MainViewModel : ObservableObject
         Juustagram.OpenSync = () => SelectedSection = sync;
         FleetChat.OpenSync = () => SelectedSection = sync;
         Assets.OpenSync = () => SelectedSection = sync;
+
+        foreach (var page in new ObservableObject[] { Ships, Equipment, Juustagram, FleetChat, Story, Assets, Sync })
+        {
+            page.PropertyChanged += OnPageChanged;
+        }
+
+        Sync.Categories.CollectionChanged += (_, e) =>
+        {
+            foreach (var row in e.NewItems?.OfType<CategoryRow>() ?? [])
+            {
+                row.PropertyChanged += OnPageChanged;
+            }
+
+            UpdateActivity();
+        };
+    }
+
+    // What the app is working on, for the top bar: work started on one page (reading data, downloading card images, a
+    // Sync download) stays visible after switching to another.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsBusy))]
+    private string activity = "";
+
+    public bool IsBusy => Activity.Length > 0;
+
+    private void OnPageChanged(object? sender, PropertyChangedEventArgs e) => UpdateActivity();
+
+    private void UpdateActivity()
+    {
+        var work = new List<string>();
+        void Loading(bool opened, bool loading, string message)
+        {
+            if (opened && loading)
+            {
+                work.Add(message.TrimEnd('…', '.'));
+            }
+        }
+
+        Loading(true, Ships.IsLoading, Ships.Message);
+        Loading(equipmentLoaded, Equipment.IsLoading, Equipment.Message);
+        Loading(juustagramLoaded, Juustagram.IsLoading, Juustagram.Message);
+        Loading(fleetChatLoaded, FleetChat.IsLoading, FleetChat.Message);
+        Loading(storyLoaded, Story.IsLoading, Story.Message);
+        Loading(assetsLoaded, Assets.IsLoading, Assets.Message);
+        Loading(true, Ships.ImagesBusy, Ships.ImageMessage);
+        Loading(true, Equipment.ImagesBusy, Equipment.ImageMessage);
+        Loading(true, Sync.Updating, Sync.Status.Length > 0 ? Sync.Status : "Updating game data");
+        foreach (var row in Sync.Categories.Where(r => r.Busy))
+        {
+            work.Add($"Downloading {row.Name} files, {row.Progress:0}%");
+        }
+
+        Activity = work.Count switch
+        {
+            0 => "",
+            1 => $"{work[0]}…",
+            _ => $"{work[0]}… and {work.Count - 1} more",
+        };
     }
 
     public ShipsViewModel Ships { get; }
@@ -67,6 +127,12 @@ public sealed partial class MainViewModel : ObservableObject
     // opened. The asset list is read again
     // on every visit, since ship pages and Sync add bundles in the meantime.
     partial void OnSelectedSectionChanged(Section value)
+    {
+        LoadSection(value);
+        UpdateActivity();
+    }
+
+    private void LoadSection(Section value)
     {
         if (value.Page == Equipment && !equipmentLoaded)
         {

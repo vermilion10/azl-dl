@@ -39,7 +39,14 @@
       <DockPanel>
         <TextBlock Text="azl-dl" FontFamily="{DynamicResource DisplayFont}" FontSize="22" FontWeight="Bold"
                    VerticalAlignment="Center" Margin="0,0,28,0" />
-        <TextBlock DockPanel.Dock="Right" Classes="data muted" Text="EN client data" VerticalAlignment="Center" />
+        <Panel DockPanel.Dock="Right" VerticalAlignment="Center">
+          <TextBlock Classes="data muted" Text="EN client data" IsVisible="{Binding !IsBusy}" HorizontalAlignment="Right" />
+          <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsBusy}" MaxWidth="420">
+            <ProgressBar IsIndeterminate="True" Width="56" MinWidth="56" VerticalAlignment="Center" />
+            <TextBlock Classes="muted" FontSize="13" Text="{Binding Activity}" TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center" ToolTip.Tip="{Binding Activity}" />
+          </StackPanel>
+        </Panel>
         <ListBox Classes="nav" ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection}"
                  AutomationProperties.Name="Sections">
           <ListBox.ItemTemplate>
