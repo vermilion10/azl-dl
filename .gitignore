@@ -428,9 +428,10 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# kc-dl-specific: the upstream master data and translation cache that
-# `kc-dl refresh-data` populates, and the asset mirror plus organized output
-# that `download`/`extract` write. Both are regenerated, and the latter runs
-# to hundreds of gigabytes.
+# azl-dl: the game data, downloaded bundles and extracted files the tools write. They are regenerated and run to
+# many gigabytes.
 /data/
 /output/
+
+# Local design notes, kept out of the repository.
+DESIGN.md
