@@ -107,6 +107,11 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
     // Chibi heads used as avatars in Juustagram and Fleet Chat.
     public string AvatarPath(string name) => ImageIn(FolderFor(AvatarFolder + name), name);
 
+    public const string AlbumCoverFolder = "musiccover/";
+
+    // An album cover, by music_album's cover name (MusicCover1 -> musiccover/musiccover1).
+    public string AlbumCoverPath(string cover) => ImageIn(FolderFor(AlbumCoverFolder + cover.ToLowerInvariant()), cover.ToLowerInvariant());
+
     public const string AvatarFolder = "qicon/";
 
     // Juustagram pictures aren't in bundles; the game loads them from its own image host, so only that host is used.
@@ -230,6 +235,26 @@ public sealed class AssetFetcher(HttpClient http, ClientRegion region, string da
             }
         }
     }
+
+    // Music plays from CRI sound banks in cue/ (bgm-*.b); sound stories are CPK archives with a subtitle file next to them.
+    public string SoundBankPath(string bank) => Path.Combine(AssetFolder, "cue", bank + ".b");
+
+    public string SoundStoryPath(string resource) => Path.Combine(AssetFolder, "originsource", "cipher", resource + ".cpk");
+
+    public string SubtitlePath(string resource) => Path.Combine(AssetFolder, "originsource", "cipher", resource + ".txt");
+
+    public Task FetchSoundBankAsync(string bank, CancellationToken cancellationToken = default) =>
+        FetchAsync(AssetCategory.Azl, [$"cue/{bank}.b"], cancellationToken, extract: false);
+
+    // The subtitles alone are a few KB; the recording itself is 75-100 MB.
+    public Task FetchSoundStoryAsync(string resource, bool recording, CancellationToken cancellationToken = default) =>
+        FetchAsync(AssetCategory.Cipher,
+            recording ? [$"originsource/cipher/{resource}.txt", $"originsource/cipher/{resource}.cpk"] : [$"originsource/cipher/{resource}.txt"],
+            cancellationToken, extract: false);
+
+    // Every file of a category in the hash list fetched last, without asking the server; empty before the first fetch.
+    public IReadOnlyList<HashRow> KnownFiles(AssetCategory category) =>
+        new CdnClient(http, region, Path.Combine(dataFolder, "cache")).CachedHashList(category);
 
     public const string ShipImageFolder = "shipyardicon/";
 

@@ -11,6 +11,17 @@ public sealed class CdnClient(HttpClient http, ClientRegion region, string cache
 
     public string AssetUrl(string md5) => $"{region.CdnUrl}/{Platform}/resource/{md5}";
 
+    // The newest hash list already cached for a category, for listing what exists without asking the server; empty
+    // when none has been fetched yet.
+    public IReadOnlyList<HashRow> CachedHashList(AssetCategory category)
+    {
+        var folder = Path.Combine(cacheDirectory, region.Name, "hash");
+        var newest = Directory.Exists(folder)
+            ? new DirectoryInfo(folder).GetFiles($"_{AssetVersion.ListName(category)}_*.csv").MaxBy(f => f.LastWriteTimeUtc)
+            : null;
+        return newest is null ? [] : HashList.Parse(File.ReadAllText(newest.FullName));
+    }
+
     // Hash lists are immutable per version string, so a cached copy is reused instead of fetched again.
     public async Task<IReadOnlyList<HashRow>> GetHashListAsync(AssetVersion version, CancellationToken cancellationToken = default)
     {

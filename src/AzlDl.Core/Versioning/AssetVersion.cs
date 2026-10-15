@@ -46,6 +46,9 @@ public sealed record AssetVersion(AssetCategory Category, string Version, string
         return new AssetVersion(category, version, parts[^1], raw);
     }
 
+    // "azhash" for Azl: the name the gate and the cached hash list files use.
+    public static string ListName(AssetCategory category) => Names.First(n => n.Value == category).Key;
+
     public static AssetCategory? ParseCategory(string name) =>
         Enum.TryParse<AssetCategory>(name, ignoreCase: true, out var category) ? category : null;
 }
