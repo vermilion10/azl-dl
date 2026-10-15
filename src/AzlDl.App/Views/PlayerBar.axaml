@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             x:Class="AzlDl.App.Views.PlayerBar"
+             x:DataType="vm:PlayerViewModel">
+  <!-- Now playing: title, play and pause, and the position to drag. -->
+  <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0"
+          Padding="20,10" IsVisible="{Binding HasTrack}">
+    <Grid ColumnDefinitions="Auto,240,Auto,*,Auto" ColumnSpacing="14">
+      <Button Classes="primary" Content="{Binding PlayPauseTitle}" Command="{Binding PlayPauseCommand}" MinWidth="88" />
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
+        <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+      </StackPanel>
+      <TextBlock Grid.Column="2" Classes="data muted" FontSize="12" Text="{Binding PositionText}" VerticalAlignment="Center" />
+      <Slider Grid.Column="3" Minimum="0" Maximum="{Binding LengthSeconds}" Value="{Binding PositionSeconds}"
+              VerticalAlignment="Center" AutomationProperties.Name="Position" />
+      <TextBlock Grid.Column="4" Classes="data muted" FontSize="12" Text="{Binding LengthText}" VerticalAlignment="Center" />
+    </Grid>
+  </Border>
+</UserControl>

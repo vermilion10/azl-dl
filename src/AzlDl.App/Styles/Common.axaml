@@ -250,6 +250,24 @@
     <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
   </Style>
 
+  <!-- Sound story subtitles: plain lines that play from where they're clicked; the line being spoken has an accent bar
+       and stronger text, so it's found without reading the timestamps. -->
+  <Style Selector="Button.line">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="3,0,0,0" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+    <Setter Property="Padding" Value="12,6" />
+  </Style>
+  <Style Selector="Button.line.current">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.line:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+  </Style>
+
   <!-- Chat bubbles: the ships' on the surface colour, the Commander's in the accent, as messaging apps tell sides apart. -->
   <Style Selector="Border.bubble">
     <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />

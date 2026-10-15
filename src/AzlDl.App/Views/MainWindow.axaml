@@ -19,6 +19,12 @@
     <DataTemplate DataType="vm:FleetChatViewModel">
       <views:FleetChatView />
     </DataTemplate>
+    <DataTemplate DataType="vm:MusicViewModel">
+      <views:MusicView />
+    </DataTemplate>
+    <DataTemplate DataType="vm:AsmrViewModel">
+      <views:AsmrView />
+    </DataTemplate>
     <DataTemplate DataType="vm:StoryViewModel">
       <views:StoryView />
     </DataTemplate>

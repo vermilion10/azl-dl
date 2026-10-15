@@ -251,6 +251,49 @@ public class StyleTests
         Assert.StartsWith("{", json.Text);
     }
 
+    // Music lists the collection's albums and every music bank; ASMR lists the sound stories with their subtitles, and
+    // a downloaded recording decodes to sound (its USM audio is masked and ADX-encoded).
+    [AvaloniaFact]
+    public async Task Music_and_asmr_pages_read_game_audio()
+    {
+        var dataFolder = Environment.GetEnvironmentVariable("AZLDL_DATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(dataFolder), "Set AZLDL_DATA to a data folder.");
+
+        var app = Application.Current!;
+        var settings = new AppSettings { Style = AppStyle.ChartRoom, Theme = ThemeMode.Light, DataFolder = dataFolder! };
+        StyleManager.Apply(app, settings.Style, settings.Theme);
+        var main = new MainViewModel(app, settings);
+        var window = new MainWindow { DataContext = main, Width = 1360, Height = 880 };
+        window.Show();
+
+        main.SelectedSection = main.Sections.Single(s => s.Page is MusicViewModel);
+        await WaitUntil(() => main.Music.IsReady || main.Music.HasProblem);
+        Assert.True(main.Music.IsReady, main.Music.Message);
+        Assert.True(main.Music.Albums.Count >= 10);
+        Assert.Contains(main.Music.Albums, a => a.Name == "All game music" && a.Tracks.Count > 400);
+        await WaitUntil(() => main.Music.Albums[0].Image is not null);
+        SaveFrame(window, "music.png");
+
+        main.SelectedSection = main.Sections.Single(s => s.Page is AsmrViewModel);
+        var asmr = main.Asmr;
+        await WaitUntil(() => asmr.IsReady || asmr.HasProblem);
+        Assert.True(asmr.IsReady, asmr.Message);
+        Assert.Equal(30, asmr.Stories.Count);
+        var kashino = asmr.Stories.Single(s => s.Story.Resource == "soundstory2_jp");
+        asmr.SelectedStory = kashino;
+        await WaitUntil(() => asmr.Lines.Count > 0);
+        Assert.NotEmpty(asmr.Lines);
+        SaveFrame(window, "asmr.png");
+
+        var recording = Path.Combine(dataFolder!, "AssetBundles", "originsource", "cipher", "soundstory2_jp.cpk");
+        if (File.Exists(recording))
+        {
+            var wav = await asmr.ReadAsync(kashino.Story);
+            Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(wav, 0, 4));
+            Assert.InRange(wav.Length / (48000.0 * 4), 200, 300);
+        }
+    }
+
     // Stats follow the game's own formula (model/vo/ship.lua): growth per level, extra growth past 100, enhancement,
     // research and META bonuses, affinity, then retrofit nodes.
     [Fact]

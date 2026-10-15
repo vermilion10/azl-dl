@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:views="using:AzlDl.App.Views"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.AsmrView"
+             x:Name="Root"
+             x:DataType="vm:AsmrViewModel">
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="ASMR isn't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <DockPanel IsVisible="{Binding IsReady}">
+      <views:PlayerBar DockPanel.Dock="Bottom" DataContext="{Binding Player}" />
+      <Grid ColumnDefinitions="360,*">
+        <!-- Sound stories, each with its ship's card picture when the gallery's images are downloaded. -->
+        <DockPanel Background="{DynamicResource SurfaceBrush}">
+          <TextBlock DockPanel.Dock="Bottom" Classes="muted data" Margin="16,8" FontSize="12"
+                     Text="{Binding Stories.Count, StringFormat='{}{0} sound stories'}" />
+          <ListBox Classes="picker" Padding="12" ItemsSource="{Binding Stories}" SelectedItem="{Binding SelectedStory}"
+                   AutomationProperties.Name="Sound stories">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:StoryItem">
+                <DockPanel>
+                  <Border DockPanel.Dock="Left" Width="44" Height="62" Margin="0,0,12,0" Background="{DynamicResource StageBrush}"
+                          ClipToBounds="True">
+                    <Image Source="{Binding Image}" Stretch="UniformToFill" />
+                  </Border>
+                  <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="{Binding Story.Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Classes="muted" FontSize="12" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </DockPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+
+        <DockPanel Grid.Column="1" Background="{DynamicResource StageBrush}" IsVisible="{Binding HasStory}">
+          <StackPanel DockPanel.Dock="Top" Margin="32,24,32,12" Spacing="10" MaxWidth="760" HorizontalAlignment="Left">
+            <TextBlock Text="{Binding SelectedStory.Story.Title}" FontFamily="{DynamicResource DisplayFont}" FontSize="28"
+                       FontWeight="Bold" TextWrapping="Wrap" />
+            <TextBlock Classes="muted" Text="{Binding SelectedStory.Subtitle}" />
+            <TextBlock Text="{Binding SelectedStory.Story.Overview}" TextWrapping="Wrap" LineHeight="22" />
+            <WrapPanel ItemSpacing="10" LineSpacing="8" Margin="0,6,0,0">
+              <Button Classes="primary" Content="{Binding PlayTitle}" Command="{Binding PlayStoryCommand}" IsVisible="{Binding CanPlay}" />
+              <Button Content="Play the sample" Command="{Binding PlayPreviewCommand}">
+                <Button.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="CanPlay" />
+                    <Binding Path="HasPreview" />
+                  </MultiBinding>
+                </Button.IsVisible>
+              </Button>
+              <Button Content="Save WAV" Click="OnSaveStory" IsEnabled="{Binding !Busy}" />
+            </WrapPanel>
+            <ProgressBar IsIndeterminate="True" IsVisible="{Binding Busy}" />
+            <TextBlock Classes="muted" FontSize="13" Text="{Binding Status}" TextWrapping="Wrap"
+                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+
+          <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Subtitles" Margin="32,8,32,4" />
+          <TextBlock DockPanel.Dock="Top" Classes="muted" FontSize="13" Margin="32,0,32,8" Text="{Binding SubtitleMessage}"
+                     TextWrapping="Wrap" IsVisible="{Binding SubtitleMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <!-- Clicking a line plays from there; the line being spoken is marked while the story plays. -->
+          <ListBox x:Name="SubtitleList" Classes="topics" ItemsSource="{Binding Lines}" Margin="20,0,20,12"
+                   AutomationProperties.Name="Subtitles">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SubtitleItem">
+                <Button Classes="line" Classes.current="{Binding IsCurrent}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                        Command="{Binding #Root.((vm:AsmrViewModel)DataContext).SeekToCommand}" CommandParameter="{Binding}"
+                        AutomationProperties.Name="{Binding Line.Text}">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Classes="data muted" FontSize="12" Width="48" Text="{Binding Time}"
+                               VerticalAlignment="Top" Margin="0,2,0,0" />
+                    <TextBlock Text="{Binding Line.Text}" TextWrapping="Wrap" LineHeight="22" />
+                  </DockPanel>
+                </Button>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Grid>
+    </DockPanel>
+  </Panel>
+</UserControl>

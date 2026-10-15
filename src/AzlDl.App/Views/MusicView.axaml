@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:views="using:AzlDl.App.Views"
+             xmlns:controls="using:AzlDl.App.Controls"
+             x:Class="AzlDl.App.Views.MusicView"
+             x:Name="Root"
+             x:DataType="vm:MusicViewModel">
+  <Panel>
+    <StackPanel IsVisible="{Binding IsLoading}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Width="360">
+      <ProgressBar IsIndeterminate="True" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextAlignment="Center" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
+      <TextBlock Text="Music isn't available" FontSize="20" FontWeight="SemiBold" />
+      <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
+      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+    </StackPanel>
+
+    <DockPanel IsVisible="{Binding IsReady}">
+      <views:PlayerBar DockPanel.Dock="Bottom" DataContext="{Binding Player}" />
+      <Grid ColumnDefinitions="320,*">
+        <!-- Albums, with the game's covers once they're downloaded. -->
+        <ListBox Classes="picker" Background="{DynamicResource SurfaceBrush}" Padding="12" ItemsSource="{Binding Albums}"
+                 SelectedItem="{Binding SelectedAlbum}" AutomationProperties.Name="Albums">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:AlbumItem">
+              <DockPanel>
+                <Border DockPanel.Dock="Left" Width="56" Height="56" Margin="0,0,12,0" Background="{DynamicResource StageBrush}"
+                        ClipToBounds="True">
+                  <Image Source="{Binding Image}" Stretch="UniformToFill" />
+                </Border>
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Classes="muted data" FontSize="12" Text="{Binding Subtitle}" />
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <DockPanel Grid.Column="1" Background="{DynamicResource StageBrush}">
+          <DockPanel DockPanel.Dock="Top" Margin="28,20,28,8">
+            <Border DockPanel.Dock="Left" Width="120" Height="120" Margin="0,0,20,0" ClipToBounds="True"
+                    IsVisible="{Binding SelectedAlbum.Image, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <Image Source="{Binding SelectedAlbum.Image}" Stretch="UniformToFill" />
+            </Border>
+            <StackPanel VerticalAlignment="Bottom" Spacing="4">
+              <TextBlock Text="{Binding SelectedAlbum.Name}" FontFamily="{DynamicResource DisplayFont}" FontSize="28" FontWeight="Bold"
+                         TextWrapping="Wrap" />
+              <TextBlock Classes="muted data" FontSize="13" Text="{Binding SelectedAlbum.Subtitle}" />
+              <TextBlock Classes="muted" FontSize="13" Text="{Binding Status}" TextWrapping="Wrap"
+                         IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted" FontSize="13" TextWrapping="Wrap" IsVisible="{Binding !CanPlay}"
+                         Text="Playing needs Windows; tracks can still be saved as WAV." />
+            </StackPanel>
+          </DockPanel>
+
+          <ListBox Classes="topics" ItemsSource="{Binding SelectedAlbum.Tracks}" Margin="16,0,16,8" AutomationProperties.Name="Tracks">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <VirtualizingStackPanel />
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:TrackItem">
+                <Grid ColumnDefinitions="36,*,Auto,Auto,Auto" ColumnSpacing="12">
+                  <TextBlock Classes="data muted" FontSize="12" Text="{Binding Number}" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Classes="data muted" FontSize="11" Text="{Binding Track.Bank}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Classes="data muted" FontSize="12" Text="{Binding LengthText}" VerticalAlignment="Center" />
+                  <Button Grid.Column="3" Content="Play" IsVisible="{Binding #Root.((vm:MusicViewModel)DataContext).CanPlay}"
+                          Command="{Binding #Root.((vm:MusicViewModel)DataContext).PlayCommand}" CommandParameter="{Binding}"
+                          AutomationProperties.Name="{Binding Track.Title, StringFormat='Play {0}'}" />
+                  <Button Grid.Column="4" Content="Save WAV" Click="OnSaveTrack" Tag="{Binding}"
+                          AutomationProperties.Name="{Binding Track.Title, StringFormat='Save {0}'}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Grid>
+    </DockPanel>
+  </Panel>
+</UserControl>

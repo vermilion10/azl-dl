@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace AzlDl.App.Audio;
 
 // Plays one WAV at a time with the Windows sound API, which needs no extra libraries. Starting a line stops the one
-// before. Elsewhere IsSupported is false and the app hides its play buttons.
+// before, and any music or sound story. Elsewhere IsSupported is false and the app hides its play buttons.
 public static class VoicePlayer
 {
     private const uint Memory = 0x0004;
@@ -23,6 +23,7 @@ public static class VoicePlayer
         }
 
         Stop();
+        WavePlayer.Shared.Stop();
         playing = GCHandle.Alloc(wav, GCHandleType.Pinned);
         PlaySound(playing.AddrOfPinnedObject(), IntPtr.Zero, Memory | Async | NoDefault);
     }

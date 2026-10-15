@@ -16,6 +16,8 @@ public sealed partial class MainViewModel : ObservableObject
     private bool juustagramLoaded;
     private bool fleetChatLoaded;
     private bool assetsLoaded;
+    private bool musicLoaded;
+    private bool asmrLoaded;
 
     public MainViewModel(Application app, AppSettings settings)
     {
@@ -23,6 +25,9 @@ public sealed partial class MainViewModel : ObservableObject
         Equipment = new EquipmentViewModel(settings);
         Juustagram = new JuustagramViewModel(settings);
         FleetChat = new FleetChatViewModel(settings);
+        Player = new PlayerViewModel();
+        Music = new MusicViewModel(settings, Player);
+        Asmr = new AsmrViewModel(settings, Player);
         Story = new StoryViewModel(settings);
         Assets = new AssetsViewModel(settings);
         Sync = new SyncViewModel(settings, ReloadDataAsync);
@@ -34,7 +39,8 @@ public sealed partial class MainViewModel : ObservableObject
 
         var sync = new Section("Sync", Sync);
         Sections = [new Section("Ships", Ships), new Section("Equipment", Equipment), new Section("Juustagram", Juustagram),
-            new Section("Fleet Chat", FleetChat), new Section("Story", Story), new Section("Assets", Assets), sync, new Section("Settings", SettingsPage)];
+            new Section("Fleet Chat", FleetChat), new Section("Music", Music), new Section("ASMR", Asmr), new Section("Story", Story),
+            new Section("Assets", Assets), sync, new Section("Settings", SettingsPage)];
         selectedSection = Sections[0];
         Ships.OpenSync = () => SelectedSection = sync;
         Story.OpenSync = () => SelectedSection = sync;
@@ -42,8 +48,10 @@ public sealed partial class MainViewModel : ObservableObject
         Juustagram.OpenSync = () => SelectedSection = sync;
         FleetChat.OpenSync = () => SelectedSection = sync;
         Assets.OpenSync = () => SelectedSection = sync;
+        Music.OpenSync = () => SelectedSection = sync;
+        Asmr.OpenSync = () => SelectedSection = sync;
 
-        foreach (var page in new ObservableObject[] { Ships, Equipment, Juustagram, FleetChat, Story, Assets, Sync })
+        foreach (var page in new ObservableObject[] { Ships, Equipment, Juustagram, FleetChat, Music, Asmr, Story, Assets, Sync })
         {
             page.PropertyChanged += OnPageChanged;
         }
@@ -85,6 +93,10 @@ public sealed partial class MainViewModel : ObservableObject
         Loading(juustagramLoaded, Juustagram.IsLoading, Juustagram.Message);
         Loading(fleetChatLoaded, FleetChat.IsLoading, FleetChat.Message);
         Loading(storyLoaded, Story.IsLoading, Story.Message);
+        Loading(musicLoaded, Music.IsLoading, Music.Message);
+        Loading(asmrLoaded, Asmr.IsLoading, Asmr.Message);
+        Loading(musicLoaded, Music.Status.EndsWith('…'), Music.Status);
+        Loading(asmrLoaded, Asmr.Busy, Asmr.Status);
         Loading(assetsLoaded, Assets.IsLoading, Assets.Message);
         Loading(true, Ships.ImagesBusy, Ships.ImageMessage);
         Loading(true, Equipment.ImagesBusy, Equipment.ImageMessage);
@@ -110,6 +122,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     public FleetChatViewModel FleetChat { get; }
 
+    public PlayerViewModel Player { get; }
+
+    public MusicViewModel Music { get; }
+
+    public AsmrViewModel Asmr { get; }
+
     public StoryViewModel Story { get; }
 
     public AssetsViewModel Assets { get; }
@@ -123,9 +141,8 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private Section selectedSection;
 
-    // Equipment, Juustagram, Fleet Chat and the story archive take a moment to read, so they load the first time they're
-    // opened. The asset list is read again
-    // on every visit, since ship pages and Sync add bundles in the meantime.
+    // Pages other than Ships take a moment to read, so they load the first time they're opened. The asset list is read
+    // again on every visit, since ship pages and Sync add bundles in the meantime.
     partial void OnSelectedSectionChanged(Section value)
     {
         LoadSection(value);
@@ -148,6 +165,16 @@ public sealed partial class MainViewModel : ObservableObject
         {
             fleetChatLoaded = true;
             _ = FleetChat.LoadAsync();
+        }
+        else if (value.Page == Music && !musicLoaded)
+        {
+            musicLoaded = true;
+            _ = Music.LoadAsync();
+        }
+        else if (value.Page == Asmr && !asmrLoaded)
+        {
+            asmrLoaded = true;
+            _ = Asmr.LoadAsync();
         }
         else if (value.Page == Story && !storyLoaded)
         {
@@ -182,6 +209,16 @@ public sealed partial class MainViewModel : ObservableObject
         if (storyLoaded)
         {
             await Story.LoadAsync();
+        }
+
+        if (musicLoaded)
+        {
+            await Music.LoadAsync();
+        }
+
+        if (asmrLoaded)
+        {
+            await Asmr.LoadAsync();
         }
 
         if (assetsLoaded)
