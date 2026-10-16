@@ -160,6 +160,12 @@ public class StyleTests
         Dispatcher.UIThread.RunJobs();
         Assert.Equal("#ff0b1220", Background());
 
+        // Help and feedback point at the project's guide, issue tracker and source.
+        var links = window.GetVisualDescendants().OfType<HyperlinkButton>().Select(l => l.NavigateUri?.ToString()).ToList();
+        Assert.Contains("https://github.com/vermilion10/azl-dl#readme", links);
+        Assert.Contains("https://github.com/vermilion10/azl-dl/issues/new", links);
+        Assert.Contains("https://github.com/vermilion10/azl-dl", links);
+
         var frame = window.CaptureRenderedFrame();
 #pragma warning disable CS0618
         frame!.Save(Path.Combine(OutputFolder(), "settings-PortMenu-Dark.png"));

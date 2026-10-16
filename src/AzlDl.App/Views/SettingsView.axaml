@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:app="using:AzlDl.App"
              xmlns:controls="using:AzlDl.App.Controls"
              x:Class="AzlDl.App.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
@@ -68,6 +69,17 @@
           <Button DockPanel.Dock="Right" Content="Choose folder" Click="OnChooseFolder" Margin="12,0,0,0" />
           <TextBlock Classes="data" Text="{Binding DataFolder}" VerticalAlignment="Center" TextWrapping="Wrap" />
         </DockPanel>
+      </StackPanel>
+
+      <StackPanel Spacing="8">
+        <TextBlock Classes="heading" Text="Help and feedback" />
+        <TextBlock Classes="muted" TextWrapping="Wrap"
+                   Text="The guide covers every page and the command-line tool. If something doesn't work or looks wrong, report it with the steps that led there." />
+        <WrapPanel ItemSpacing="20">
+          <HyperlinkButton Content="Read the guide" NavigateUri="{x:Static app:Links.Guide}" Padding="0,4" />
+          <HyperlinkButton Content="Report a problem" NavigateUri="{x:Static app:Links.ReportProblem}" Padding="0,4" />
+          <HyperlinkButton Content="Source code on GitHub" NavigateUri="{x:Static app:Links.Repository}" Padding="0,4" />
+        </WrapPanel>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

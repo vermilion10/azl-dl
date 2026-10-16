@@ -41,7 +41,7 @@ public sealed partial class MusicViewModel(AppSettings settings, PlayerViewModel
     public PlayerViewModel Player { get; } = player;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem))]
+    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem), nameof(HasFailed))]
     private LoadState state = LoadState.Loading;
 
     public bool IsLoading => State == LoadState.Loading;
@@ -49,6 +49,9 @@ public sealed partial class MusicViewModel(AppSettings settings, PlayerViewModel
     public bool IsReady => State == LoadState.Ready;
 
     public bool HasProblem => State is LoadState.MissingData or LoadState.Failed;
+
+    // Reading data that is there went wrong, which is worth reporting; missing data only needs a download.
+    public bool HasFailed => State == LoadState.Failed;
 
     [ObservableProperty]
     private string message = "";
@@ -246,7 +249,7 @@ public sealed partial class AsmrViewModel(AppSettings settings, PlayerViewModel 
     public PlayerViewModel Player { get; } = player;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem))]
+    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem), nameof(HasFailed))]
     private LoadState state = LoadState.Loading;
 
     public bool IsLoading => State == LoadState.Loading;
@@ -254,6 +257,9 @@ public sealed partial class AsmrViewModel(AppSettings settings, PlayerViewModel 
     public bool IsReady => State == LoadState.Ready;
 
     public bool HasProblem => State is LoadState.MissingData or LoadState.Failed;
+
+    // Reading data that is there went wrong, which is worth reporting; missing data only needs a download.
+    public bool HasFailed => State == LoadState.Failed;
 
     [ObservableProperty]
     private string message = "";

@@ -32,7 +32,7 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
     private int previewRequest;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem))]
+    [NotifyPropertyChangedFor(nameof(IsLoading), nameof(IsReady), nameof(HasProblem), nameof(HasFailed))]
     private LoadState state = LoadState.Loading;
 
     public bool IsLoading => State == LoadState.Loading;
@@ -40,6 +40,9 @@ public sealed partial class AssetsViewModel(AppSettings settings) : ObservableOb
     public bool IsReady => State == LoadState.Ready;
 
     public bool HasProblem => State is LoadState.MissingData or LoadState.Failed;
+
+    // Reading data that is there went wrong, which is worth reporting; missing data only needs a download.
+    public bool HasFailed => State == LoadState.Failed;
 
     [ObservableProperty]
     private string message = "";

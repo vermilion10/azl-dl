@@ -250,6 +250,14 @@
     <Setter Property="Foreground" Value="{DynamicResource AccentInkBrush}" />
   </Style>
 
+  <!-- Links to the guide and the issue tracker take the style's accent rather than Fluent's stock blue. -->
+  <Style Selector="HyperlinkButton /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+  </Style>
+  <Style Selector="HyperlinkButton:pointerover /template/ ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource InkBrush}" />
+  </Style>
+
   <!-- Sound story subtitles: plain lines that play from where they're clicked; the line being spoken has an accent bar
        and stronger text, so it's found without reading the timestamps. -->
   <Style Selector="Button.line">

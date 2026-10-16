@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AzlDl.App.ViewModels"
+             xmlns:app="using:AzlDl.App"
              xmlns:data="using:AzlDl.Core.Data"
              xmlns:controls="using:AzlDl.App.Controls"
              x:Class="AzlDl.App.Views.JuustagramView"
@@ -45,7 +46,11 @@
     <StackPanel IsVisible="{Binding HasProblem}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560">
       <TextBlock Text="Juustagram isn't available" FontSize="20" FontWeight="SemiBold" />
       <TextBlock Classes="muted" Text="{Binding Message}" TextWrapping="Wrap" />
-      <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" Margin="0,8,0,0" />
+      <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,8,0,0">
+        <Button Classes="primary" Content="Go to Sync" Command="{Binding GoToSyncCommand}" />
+        <HyperlinkButton Content="Report a problem" NavigateUri="{x:Static app:Links.ReportProblem}" IsVisible="{Binding HasFailed}"
+                         VerticalAlignment="Center" />
+      </StackPanel>
     </StackPanel>
 
     <Grid IsVisible="{Binding IsReady}" ColumnDefinitions="380,*">
