@@ -300,6 +300,21 @@ public class StyleTests
         }
     }
 
+    // The bundled fonts resolve at every weight the styles use, instead of falling back to a system font.
+    [AvaloniaTheory]
+    [InlineData("IBM Plex Sans", 400)]
+    [InlineData("IBM Plex Sans", 500)]
+    [InlineData("IBM Plex Sans", 600)]
+    [InlineData("IBM Plex Mono", 400)]
+    public void Bundled_fonts_resolve(string family, int weight)
+    {
+        var font = new Avalonia.Media.FontFamily($"avares://azl-dl-app/Assets/Fonts#{family}");
+        Assert.True(Avalonia.Media.FontManager.Current.TryGetGlyphTypeface(
+            new Avalonia.Media.Typeface(font, weight: (Avalonia.Media.FontWeight)weight), out var glyphs));
+        Assert.StartsWith(family, glyphs!.FamilyName);
+        Assert.Equal(weight, (int)glyphs.Weight);
+    }
+
     // Stats follow the game's own formula (model/vo/ship.lua): growth per level, extra growth past 100, enhancement,
     // research and META bonuses, affinity, then retrofit nodes.
     [Fact]
